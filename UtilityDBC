@@ -1,0 +1,960 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService") 
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+local camera = workspace.CurrentCamera
+
+-- VARIÁVEIS DE INSTÂNCIAS
+local frame = nil
+local shadow = nil
+local confirmationModal = nil -- Referência ao modal de confirmação
+
+-- Variáveis de estado e propriedades
+local savedPosition = nil
+local spawnEnabled = false
+local noclipEnabled = false 
+local flyEnabled = false
+local walkSpeed = humanoid.WalkSpeed
+local jumpPower = humanoid.JumpPower
+
+-- =========================================================================
+-- VARIÁVEIS DO SUPER RING (Funny Troll) - Default Fixo
+-- =========================================================================
+local ringPartsEnabled = false 
+local ringRadius = 50        -- Fixo 
+local rotationSpeed = 0.5
+local attractionStrength = 1000 -- Fixo por requisição do usuário
+local ringHeight = 100
+local parts = {} 
+
+-- =========================================================================
+-- VARIÁVEIS DO FLY (Réplica do Infinite Yield)
+-- =========================================================================
+local isFlying = false
+local SPEED = 0 
+local current_connection = nil 
+local bodyVelocity = nil 
+local bodyGyro = nil     
+local CONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+local lCONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0} 
+local key_map = {
+    [Enum.KeyCode.W] = "F", [Enum.KeyCode.S] = "B",
+    [Enum.KeyCode.A] = "L", [Enum.KeyCode.D] = "R",
+    [Enum.KeyCode.Q] = "Q", [Enum.KeyCode.E] = "E",
+    [Enum.KeyCode.Space] = "Q", 
+    [Enum.KeyCode.LeftShift] = "E" 
+}
+
+-- Variáveis de layout e tamanho (HUD)
+local PADDING = 10
+local BUTTON_HEIGHT = 35
+local SMALL_BUTTON_HEIGHT = 30
+local DIVIDER_HEIGHT = 20
+local FRAME_SIZE_X = 320
+-- ALTERADO de 570 para 600 conforme a requisição anterior.
+local FRAME_SIZE_Y = 600 
+local SHADOW_SIZE_X = FRAME_SIZE_X + 4
+local SHADOW_SIZE_Y = FRAME_SIZE_Y + 4
+local currentY = 40 
+
+-- Variáveis para a função de arrastar
+local isDragging = false
+local dragStartPos = Vector2.new()
+local frameStartPos = UDim2.new()
+
+-- Definição de TweenInfo e Cores 
+local TWEEN_INFO = TweenInfo.new(
+    0.15, 
+    Enum.EasingStyle.Quad, 
+    Enum.EasingDirection.Out, 
+    0, 
+    false, 
+    0 
+)
+
+local COLOR_ON = Color3.fromRGB(50,200,50)    
+local COLOR_OFF = Color3.fromRGB(200,50,50)  
+local COLOR_HOVER_STATE = Color3.fromRGB(90,90,90) 
+local COLOR_DEFAULT_BUTTON = Color3.fromRGB(50,50,50)
+local COLOR_HOVER_BUTTON = Color3.fromRGB(90,90,90)
+local MODAL_BACKGROUND = Color3.fromRGB(30, 30, 30) -- Cor do fundo do modal
+
+-- Persistência do SetSpawn
+if _G.UtilitySetSpawnPosition then
+    savedPosition = _G.UtilitySetSpawnPosition
+    spawnEnabled = true
+end
+
+-- =========================================================================
+-- FUNÇÕES DE ATUALIZAÇÃO E EVENTOS DE PERSONAGEM
+-- =========================================================================
+
+local function updateCharacter(char)
+    character = char
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+    
+    if humanoid then
+        humanoid.WalkSpeed = walkSpeed
+        humanoid.JumpPower = jumpPower
+    end
+end
+player.CharacterAdded:Connect(updateCharacter)
+
+player.CharacterAdded:Connect(function(char)
+    updateCharacter(char) 
+    if spawnEnabled and _G.UtilitySetSpawnPosition then
+        local hrp = char:WaitForChild("HumanoidRootPart")
+        hrp.CFrame = CFrame.new(_G.UtilitySetSpawnPosition + Vector3.new(0,3,0))
+    end
+end)
+
+
+-- =========================================================================
+-- FUNÇÕES AUXILIARES DE UI E CONFIRMAÇÃO
+-- =========================================================================
+
+local function notify(msg,color)
+    if not frame then return end
+    local n = Instance.new("TextLabel")
+    n.Size = UDim2.new(0,280,0,25)
+    n.Position = UDim2.new(0.5, -280/2, 0, 50) 
+    n.BackgroundColor3 = color
+    n.TextColor3 = Color3.fromRGB(0,0,0)
+    n.Font = Enum.Font.GothamBold
+    n.TextSize = 16
+    n.Text = msg
+    n.ZIndex = 10 
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,8)
+    corner.Parent = n
+    n.Parent = frame
+    task.delay(2,function() n:Destroy() end)
+end
+
+local function showConfirmation(message, onConfirm, onCancel)
+    if confirmationModal and confirmationModal.Parent then confirmationModal:Destroy() end
+    
+    local modal = Instance.new("Frame")
+    modal.Name = "ConfirmationModal"
+    modal.Size = UDim2.new(0, 300, 0, 150)
+    -- Posiciona o modal à direita do frame principal
+    modal.Position = UDim2.new(1, 20, 0.5, -75) 
+    modal.BackgroundColor3 = MODAL_BACKGROUND
+    modal.ZIndex = 10 -- ZIndex Alto para garantir visibilidade
+    modal.Parent = frame
+    confirmationModal = modal
+ 
+    
+    modal.AnchorPoint = Vector2.new(0, 0.5)
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,15)
+    corner.Parent = modal
+    
+    local label = Instance.new("TextLabel")
+    label.Name = "ModalMessage"
+    label.Size = UDim2.new(1, -20, 0, 70)
+    label.Position = UDim2.new(0, 10, 0, 10)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextWrapped = true
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 18
+    label.Text = message
+    label.ZIndex = 11 -- ZIndex alto
+    label.Parent = modal
+    
+    local function cleanup()
+        if modal and modal.Parent then 
+            -- Anima a transparência ao sair
+            TweenService:Create(modal, TWEEN_INFO, {BackgroundTransparency = 1}):Play()
+            task.delay(0.2, function() modal:Destroy() end)
+        
+        confirmationModal = nil
+        end
+    end
+    
+    local btnYes = Instance.new("TextButton")
+    btnYes.Name = "ModalYesBtn"
+    btnYes.Size = UDim2.new(0, 120, 0, 40)
+    btnYes.Position = UDim2.new(0.5, -135, 0, 95)
+    btnYes.BackgroundColor3 = COLOR_ON
+    btnYes.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btnYes.Font = Enum.Font.GothamBold
+    btnYes.TextSize = 16
+    btnYes.Text = "Sim"
+    btnYes.ZIndex = 11 -- ZIndex alto
+    btnYes.Parent = modal
+    
+    local btnNo = Instance.new("TextButton")
+    btnNo.Name = "ModalNoBtn"
+    btnNo.Size = UDim2.new(0, 120, 0, 40)
+    btnNo.Position = UDim2.new(0.5, 15, 0, 95)
+    btnNo.BackgroundColor3 = COLOR_OFF
+    btnNo.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btnNo.Font = Enum.Font.GothamBold
+    btnNo.TextSize = 16
+    btnNo.Text = "Não"
+    btnNo.ZIndex = 11 -- ZIndex alto
+    btnNo.Parent = modal
+    
+    local cornerYes = Instance.new("UICorner")
+    cornerYes.CornerRadius = UDim.new(0,8)
+    cornerYes.Parent = btnYes
+    
+    local cornerNo = Instance.new("UICorner")
+    cornerNo.CornerRadius = UDim.new(0,8)
+    cornerNo.Parent = btnNo
+    
+    btnYes.MouseButton1Click:Connect(function()
+        cleanup()
+        if onConfirm then onConfirm() end
+    end)
+    
+    btnNo.MouseButton1Click:Connect(function()
+        cleanup()
+        if onCancel then onCancel() end
+    end)
+    
+    -- Efeitos de hover
+    btnYes.MouseEnter:Connect(function() TweenService:Create(btnYes, TWEEN_INFO, {BackgroundColor3 = Color3.fromRGB(80, 230, 80)}):Play() end)
+    btnYes.MouseLeave:Connect(function() TweenService:Create(btnYes, TWEEN_INFO, {BackgroundColor3 = COLOR_ON}):Play() end)
+    
+    btnNo.MouseEnter:Connect(function() TweenService:Create(btnNo, TWEEN_INFO, {BackgroundColor3 = Color3.fromRGB(230, 80, 80)}):Play() end)
+    btnNo.MouseLeave:Connect(function() TweenService:Create(btnNo, TWEEN_INFO, {BackgroundColor3 = COLOR_OFF}):Play() end)
+end
+
+
+local function createButton(text, height, parent, initialColor)
+    
+    local isSmall = height == SMALL_BUTTON_HEIGHT
+    local buttonWidth = isSmall and 140 or 280
+
+    local button = Instance.new("TextButton")
+    
+    button.Size = UDim2.new(0, buttonWidth, 0, height)
+    local xPos = isSmall and 20 or 20 
+    
+    local yPos = currentY
+    if not isSmall then
+        yPos = currentY
+        currentY = currentY + height + PADDING
+    end
+    
+    button.Position = UDim2.new(0, xPos, 0, yPos)
+    
+    local defaultColor = initialColor or COLOR_DEFAULT_BUTTON
+    
+    button.BackgroundColor3 = defaultColor
+    button.TextColor3 = Color3.fromRGB(255,255,255)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 16
+    button.Text = text
+    button.AutoButtonColor = false
+    button.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,10)
+    corner.Parent = button
+    
+    if not initialColor then 
+        button.MouseEnter:Connect(function() 
+            TweenService:Create(button, TWEEN_INFO, {BackgroundColor3 = COLOR_HOVER_BUTTON}):Play() 
+        end)
+        
+        button.MouseLeave:Connect(function() 
+            TweenService:Create(button, TWEEN_INFO, {BackgroundColor3 = COLOR_DEFAULT_BUTTON}):Play() 
+        end)
+    end
+    
+    return button
+end
+
+local function createInputBox(height, parent, initialText)
+    local input = Instance.new("TextBox")
+    local yPos = currentY 
+
+    input.Size = UDim2.new(0,120,0,height)
+    input.Position = UDim2.new(0,180,0,yPos) 
+    input.BackgroundColor3 = COLOR_DEFAULT_BUTTON
+    input.TextColor3 = Color3.fromRGB(255,255,255)
+    input.Text = initialText
+    input.Font = Enum.Font.GothamBold
+    input.TextSize = 16
+    input.ClearTextOnFocus = false
+    input.Parent = parent
+
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0,10)
+    inputCorner.Parent = input
+    
+    -- Atualiza currentY após a criação do par (botão + input)
+    currentY = currentY + height + PADDING
+
+    return input
+end
+
+local function createDivider(text, parent)
+    currentY = currentY + PADDING 
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 280, 0, DIVIDER_HEIGHT)
+    label.Position = UDim2.new(0, 20, 0, currentY) 
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(150, 150, 150)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.Text = "— " .. text .. " —"
+    label.Parent = parent
+    
+    currentY = currentY + DIVIDER_HEIGHT + PADDING 
+    return label
+end
+
+
+-- =========================================================================
+-- LÓGICA SUPER RING
+-- =========================================================================
+
+-- Lógica para filtrar e adicionar partes
+local function RetainPart(Part)
+    if Part:IsA("BasePart") and not Part.Anchored and Part:IsDescendantOf(workspace) then
+     
+    -- Ignora partes do próprio personagem
+        if Part.Parent == player.Character or Part:IsDescendantOf(player.Character) then
+            return false
+        end
+        Part.CanCollide = false
+        return true
+    end
+    return false
+end
+
+local function addPart(part)
+    if RetainPart(part) then
+     
+    if not table.find(parts, part) then
+            table.insert(parts, part)
+        end
+    end
+end
+
+local function removePart(part)
+    local index = table.find(parts, part)
+    if index then
+        table.remove(parts, index)
+    end
+end
+
+-- Preenche a lista inicial e conecta eventos
+for _, part in pairs(workspace:GetDescendants()) do
+    addPart(part)
+end
+
+workspace.DescendantAdded:Connect(addPart)
+workspace.DescendantRemoving:Connect(removePart)
+
+-- Loop principal do Super Ring
+RunService.Heartbeat:Connect(function()
+    if not ringPartsEnabled or not rootPart or not character:IsDescendantOf(workspace) then return end
+   
+    local tornadoCenter = rootPart.Position
+    
+    
+    for i = #parts, 1, -1 do 
+        local part = parts[i]
+        
+        if part and part.Parent and not part.Anchored and part:IsDescendantOf(workspace) then
+            
+            local pos = part.Position
+          
+            -- Calcula distância horizontal do centro e o ângulo
+            local distFromCenter = Vector3.new(pos.X, tornadoCenter.Y, pos.Z) - tornadoCenter
+            local distance = distFromCenter.Magnitude
+            local angle = math.atan2(pos.Z - tornadoCenter.Z, pos.X - tornadoCenter.X)
+            
+            
+            -- Aplica a rotação
+            local newAngle = angle + math.rad(rotationSpeed)
+            
+            -- Calcula a posição alvo (em círculo e com altura de "funil")
+            local targetPos = Vector3.new(
+                tornadoCenter.X + math.cos(newAngle) * math.min(ringRadius, distance),
+         
+                tornadoCenter.Y + (ringHeight * (math.abs(math.sin((pos.Y - tornadoCenter.Y) / ringHeight)))),
+                tornadoCenter.Z + math.sin(newAngle) * math.min(ringRadius, distance)
+            )
+            
+            -- Define a velocidade com a força constante (rápida)
+            local directionToTarget = (targetPos - part.Position)
+            part.Velocity = directionToTarget.unit * attractionStrength
+
+       
+        else
+            table.remove(parts, i) 
+        end
+    end
+end)
+
+-- Função de Ativação/Desativação do Super Ring (Interna, sem confirmação)
+local function executeToggleSuperRing(btnSuperRing)
+    ringPartsEnabled = not ringPartsEnabled
+    local targetText = ringPartsEnabled and "Super Ring: [On]" or "Super Ring: [Off]"
+    local targetColor = ringPartsEnabled and COLOR_ON or COLOR_OFF
+  
+    btnSuperRing.Text = targetText
+    TweenService:Create(btnSuperRing, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+    notify(ringPartsEnabled and "Super Ring Ativado!" or "Super Ring Desativado!", targetColor)
+end
+
+
+-- =========================================================================
+-- LÓGICA DE INPUT GLOBAL (Fly)
+-- =========================================================================
+
+local function handleInput(input, gameProcessed)
+    if UserInputService:GetFocusedTextBox() then return end
+    
+    if not isFlying then return end
+
+    local control_key = key_map[input.KeyCode]
+    
+    if control_key and not gameProcessed then
+        
+        local isBegin = input.UserInputState == Enum.UserInputState.Begin
+        local value = isBegin and 1 or 0
+        
+        if control_key == "F" then
+            CONTROL.F = value
+        elseif control_key == "B" then
+            CONTROL.B = -value 
+        elseif control_key == "L" then
+          
+            CONTROL.L = -value 
+        elseif control_key == "R" then
+            CONTROL.R = value
+        elseif control_key == "Q" then
+            CONTROL.Q = value
+        elseif control_key == "E" then
+            CONTROL.E = -value 
+        end
+    end
+end
+
+UserInputService.InputBegan:Connect(handleInput)
+UserInputService.InputEnded:Connect(handleInput)
+
+local function flyLoop() 
+ 
+    if not isFlying or not rootPart or not bodyVelocity or not bodyGyro then return end
+
+    local camera = workspace.CurrentCamera
+   
+    
+    if CONTROL.L + CONTROL.R ~= 0 or CONTROL.F + CONTROL.B ~= 0 or CONTROL.Q + CONTROL.E ~= 0 then
+        SPEED = 50 
+    elseif not (CONTROL.L + CONTROL.R ~= 0 or CONTROL.F + CONTROL.B ~= 0 or (CONTROL.Q + CONTROL.E) ~= 0) and SPEED ~= 0 then
+        SPEED = 0
+    end
+    
+    if (CONTROL.L + CONTROL.R) ~= 0 or (CONTROL.F + CONTROL.B) ~= 0 or (CONTROL.Q + CONTROL.E) ~= 0 then
+        
+        local direction_vector = (
+            (camera.CFrame.LookVector * (CONTROL.F + CONTROL.B)) + 
+            ((camera.CFrame * CFrame.new(CONTROL.L + CONTROL.R, 0, 0).p) - camera.CFrame.p) + 
+          
+            (Vector3.new(0, 1, 0) * (CONTROL.Q + CONTROL.E)) 
+        )
+        
+        bodyVelocity.Velocity = direction_vector * SPEED
+
+        lCONTROL = {F = CONTROL.F, B = CONTROL.B, L = CONTROL.L, R = CONTROL.R, Q = CONTROL.Q, E = CONTROL.E}
+        
+    elseif SPEED ~= 0 then
+        local inertia_vector = (
+         
+            (camera.CFrame.LookVector * (lCONTROL.F + lCONTROL.B)) + 
+            ((camera.CFrame * CFrame.new(lCONTROL.L + lCONTROL.R, 0, 0).p) - camera.CFrame.p) +
+            (Vector3.new(0, 1, 0) * (lCONTROL.Q + lCONTROL.E))
+        )
+        
+        bodyVelocity.Velocity = inertia_vector * SPEED
+    else
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    end
+    
+ 
+    bodyGyro.CFrame = camera.CFrame 
+end
+
+-- Função de Ativação/Desativação do Fly (Interna, sem confirmação)
+local function executeToggleFly(btnFly)
+    flyEnabled = not flyEnabled
+    
+    if flyEnabled then
+        -- LIGA O FLY
+        isFlying = true
+        humanoid.PlatformStand = true 
+        humanoid.WalkSpeed = 0 
+        humanoid.JumpPower = 0
+        
+     
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.Parent = rootPart
+        
+        bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.P = 9e4 
+        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bodyGyro.CFrame = rootPart.CFrame
+        bodyGyro.Parent = rootPart
+        
+        current_connection = RunService.RenderStepped:Connect(flyLoop)
+        
+        btnFly.Text = "Fly: [On]"
+        btnFly.BackgroundColor3 = COLOR_ON 
+        
+        notify("Fly Ativado",Color3.fromRGB(50,200,50)) 
+    else
+        -- DESLIGA O FLY
+        isFlying = false
+        
+ 
+        if current_connection then
+            current_connection:Disconnect()
+            current_connection = nil
+        end
+        
+        if bodyVelocity and bodyVelocity.Parent then bodyVelocity:Destroy() end
+        if bodyGyro and bodyGyro.Parent then bodyGyro:Destroy() end
+        bodyVelocity = nil
+        bodyGyro = nil
+ 
+        
+        CONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+        lCONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+        SPEED = 0
+
+        humanoid.PlatformStand = false 
+        humanoid.WalkSpeed = walkSpeed 
+       
+        humanoid.JumpPower = jumpPower 
+        
+        btnFly.Text = "Fly: [Off]"
+        btnFly.BackgroundColor3 = COLOR_OFF 
+        notify("Fly Desativado!",Color3.fromRGB(200,50,50))
+    end
+    
+    local targetColor = flyEnabled and COLOR_ON or COLOR_OFF
+    TweenService:Create(btnFly, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+end
+
+
+-- =========================================================================
+-- FUNÇÃO TOGGLE NOCLIP (Interna, sem confirmação)
+-- =========================================================================
+
+local function executeToggleNoclip(btnNoclip)
+    noclipEnabled = not noclipEnabled
+
+    if noclipEnabled then
+      
+        btnNoclip.Text = "Noclip: [On]"
+        btnNoclip.BackgroundColor3 = COLOR_ON 
+        notify("Noclip Ativado!",Color3.fromRGB(50,200,50))
+     
+        -- Garante que CanCollide = false ao ligar (reforço)
+        if character then
+            for _, part in character:GetDescendants() do
+                if part:IsA("BasePart") then part.CanCollide = false end
+     
+            end
+        end
+
+    else
+        
+        btnNoclip.Text = "Noclip: [Off]"
+        btnNoclip.BackgroundColor3 = COLOR_OFF 
+        notify("Noclip Desativado!",Color3.fromRGB(200,50,50))
+        
+        -- CORREÇÃO: FORÇA A RESTAURAÇÃO DA COLISÃO se Fly NÃO estiver ativo
+        if character and not flyEnabled then
+  
+            for _, part in character:GetDescendants() do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+        
+    end
+    
+    local targetColor = noclipEnabled and COLOR_ON or COLOR_OFF
+    TweenService:Create(btnNoclip, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+end
+
+-- =========================================================================
+-- CRIAÇÃO DA HUD
+-- =========================================================================
+
+task.wait(1) 
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "UtilityHUD"
+screenGui.ResetOnSpawn = false 
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+shadow = Instance.new("Frame") 
+shadow.Size = UDim2.new(0, SHADOW_SIZE_X, 0, SHADOW_SIZE_Y) 
+shadow.Position = UDim2.new(0.5, -SHADOW_SIZE_X / 2, 0.3, -SHADOW_SIZE_Y / 2) 
+shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+shadow.BackgroundTransparency = 0.5 
+shadow.BorderSizePixel = 0
+shadow.ZIndex = 0 
+shadow.Parent = screenGui
+
+local shadowCorner = Instance.new("UICorner")
+shadowCorner.CornerRadius = UDim.new(0,18) 
+shadowCorner.Parent = shadow
+
+frame = Instance.new("Frame") 
+frame.Size = UDim2.new(0, FRAME_SIZE_X, 0, FRAME_SIZE_Y)
+frame.Position = UDim2.new(0.5, -FRAME_SIZE_X / 2, 0.3, -FRAME_SIZE_Y / 2) 
+frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+frame.BorderSizePixel = 0
+frame.Active = true 
+frame.Draggable = false 
+frame.Parent = screenGui
+
+local hudCorner = Instance.new("UICorner")
+hudCorner.CornerRadius = UDim.new(0,15)
+hudCorner.Parent = frame
+
+local hudStroke = Instance.new("UIStroke")
+hudStroke.Thickness = 3
+hudStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+hudStroke.Parent = frame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,40)
+title.BackgroundTransparency = 1
+-- ALTERAÇÃO APLICADA: Titulo alterado para "Utility Gui By: DBC"
+title.Text = "Utility Gui By: DBC"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 20
+title.Parent = frame
+title.TextColor3 = Color3.fromRGB(255,255,255) 
+
+local titleArea = title 
+
+local function startDrag(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = true
+        dragStartPos = input.Position
+        frameStartPos = frame.Position
+        frame.ZIndex = 2 
+        shadow.ZIndex = 1
+    end
+end
+
+local function doDrag(input)
+    if isDragging then
+   
+        local delta = input.Position - dragStartPos
+        local newX = frameStartPos.X.Offset + delta.X
+        local newY = frameStartPos.Y.Offset + delta.Y
+        
+        local newPosition = UDim2.new(frameStartPos.X.Scale, newX, frameStartPos.Y.Scale, newY)
+        
+        frame.Position = newPosition
+        
+        local shadowNewX = newX - 2 
+  
+        local shadowNewY = newY - 2 
+        shadow.Position = UDim2.new(frameStartPos.X.Scale, shadowNewX, frameStartPos.Y.Scale, shadowNewY)
+    end
+end
+
+local function stopDrag(input)
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
+        frame.ZIndex = 1
+        shadow.ZIndex = 0
+    end
+end
+
+titleArea.InputBegan:Connect(startDrag)
+
+UserInputService.InputChanged:Connect(doDrag)
+UserInputService.InputEnded:Connect(stopDrag)
+
+task.spawn(function()
+    while frame.Parent do
+        for i=0,1,0.01 do
+   
+            local color = Color3.fromHSV(i,1,1)
+            hudStroke.Color = color
+            title.TextColor3 = color 
+            task.wait(0.03)
+        end
+    end
+end)
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0,30,0,30)
+closeButton.Position = UDim2.new(1,-35,0,5)
+closeButton.BackgroundColor3 = COLOR_OFF
+closeButton.TextColor3 = Color3.fromRGB(255,255,255)
+closeButton.Text = "X"
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 18
+closeButton.Parent = frame
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0,8)
+closeCorner.Parent = closeButton
+
+closeButton.MouseEnter:Connect(function() TweenService:Create(closeButton, TWEEN_INFO, {BackgroundColor3 = Color3.fromRGB(255,80,80)}):Play() end)
+closeButton.MouseLeave:Connect(function() TweenService:Create(closeButton, TWEEN_INFO, {BackgroundColor3 = COLOR_OFF}):Play() end)
+closeButton.MouseButton1Click:Connect(function() screenGui:Destroy() end)
+
+-- SEÇÃO 1: AÇÕES BÁSICAS
+local div1 = createDivider("Ações Básicas", frame) 
+
+local btnGetPos = createButton("Pegar Posição", BUTTON_HEIGHT, frame) 
+btnGetPos.MouseButton1Click:Connect(function()
+    if rootPart then
+        local pos = rootPart.Position
+        pcall(function() setclipboard(tostring(pos)) end)
+        notify("Posição copiada para Clipboard!",Color3.fromRGB(50,200,50)) 
+    end
+end)
+
+local initialSpawnColor = spawnEnabled and COLOR_ON or COLOR_OFF
+local btnSetSpawn = createButton(spawnEnabled and "SetSpawn: [On]" or "SetSpawn: [Off]", BUTTON_HEIGHT, frame, initialSpawnColor) 
+
+btnSetSpawn.MouseEnter:Connect(function() 
+    TweenService:Create(btnSetSpawn, TWEEN_INFO, {BackgroundColor3 = COLOR_HOVER_STATE}):Play() 
+end)
+btnSetSpawn.MouseLeave:Connect(function() 
+    
+    local targetColor = spawnEnabled and COLOR_ON or COLOR_OFF
+    TweenService:Create(btnSetSpawn, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+end)
+
+btnSetSpawn.MouseButton1Click:Connect(function()
+    spawnEnabled = not spawnEnabled
+    if spawnEnabled then
+        savedPosition = rootPart.Position
+        _G.UtilitySetSpawnPosition = savedPosition
+        btnSetSpawn.Text = "SetSpawn: [On]"
+        btnSetSpawn.BackgroundColor3 = COLOR_ON 
+        notify("SetSpawn Ativo!",Color3.fromRGB(50,150,250))
+    else
+        savedPosition = nil
+      
+        _G.UtilitySetSpawnPosition = nil
+        btnSetSpawn.Text = "SetSpawn: [Off]"
+        btnSetSpawn.BackgroundColor3 = COLOR_OFF 
+        notify("SetSpawn Desativado!",Color3.fromRGB(200,50,50))
+    
+    end
+    local targetColor = spawnEnabled and COLOR_ON or COLOR_OFF
+    TweenService:Create(btnSetSpawn, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+end)
+
+-- SEÇÃO 2: MOVIMENTO / VELOCIDADE
+local div2 = createDivider("Movimento & Velocidade", frame) 
+
+local initialNoclipColor = noclipEnabled and COLOR_ON or COLOR_OFF
+local btnNoclip = createButton(noclipEnabled and "Noclip: [On]" or "Noclip: [Off]", BUTTON_HEIGHT, frame, initialNoclipColor) 
+
+btnNoclip.MouseEnter:Connect(function() 
+    
+    TweenService:Create(btnNoclip, TWEEN_INFO, {BackgroundColor3 = COLOR_HOVER_STATE}):Play() 
+end)
+btnNoclip.MouseLeave:Connect(function() 
+    local targetColor = noclipEnabled and COLOR_ON or COLOR_OFF
+    TweenService:Create(btnNoclip, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+end)
+
+--- CORREÇÃO APLICADA: Confirmação SOMENTE na ativação
+btnNoclip.MouseButton1Click:Connect(function()
+    if not noclipEnabled then
+        showConfirmation("Deseja Ativar o Noclip?", function()
+            executeToggleNoclip(btnNoclip) 
+        end)
+    else 
+        executeToggleNoclip(btnNoclip)
+    end
+end)
+
+
+local initialFlyColor = flyEnabled and COLOR_ON or COLOR_OFF
+local btnFly = createButton(flyEnabled 
+    and "Fly: [On]" or "Fly: [Off]", BUTTON_HEIGHT, frame, initialFlyColor) 
+
+btnFly.MouseEnter:Connect(function() 
+    TweenService:Create(btnFly, TWEEN_INFO, {BackgroundColor3 = COLOR_HOVER_STATE}):Play() 
+end)
+btnFly.MouseLeave:Connect(function() 
+    local targetColor = flyEnabled and COLOR_ON or COLOR_OFF
+    TweenService:Create(btnFly, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+end)
+
+--- CORREÇÃO APLICADA: Confirmação SOMENTE na ativação
+btnFly.MouseButton1Click:Connect(function()
+    if not flyEnabled then
+        showConfirmation("Deseja Ativar o Fly?", function()
+            executeToggleFly(btnFly)
+        end)
+    else
+        executeToggleFly(btnFly)
+   
+    end
+end)
+
+local btnWalk = createButton("Speed", SMALL_BUTTON_HEIGHT, frame) 
+local walkInput = createInputBox(SMALL_BUTTON_HEIGHT, frame, tostring(walkSpeed)) 
+
+btnWalk.MouseButton1Click:Connect(function()
+    local val = tonumber(walkInput.Text)
+    if val and val > 0 then
+        walkSpeed = val
+        if humanoid then humanoid.WalkSpeed = walkSpeed end
+        btnWalk.Text = "Speed: ["..walkSpeed.."]" 
+        notify("WalkSpeed ajustada: "..walkSpeed,Color3.fromRGB(100,200,100))
+    else
+        walkInput.Text = tostring(walkSpeed)
+        notify("Valor Inválido!",Color3.fromRGB(250,100,100))
+ 
+    end
+end)
+
+local btnJump = createButton("Jump", SMALL_BUTTON_HEIGHT, frame) 
+local jumpInput = createInputBox(SMALL_BUTTON_HEIGHT, frame, tostring(jumpPower)) 
+
+btnJump.MouseButton1Click:Connect(function()
+    local val = tonumber(jumpInput.Text)
+    if val and val > 0 then
+        jumpPower = val
+        if humanoid then humanoid.JumpPower = jumpPower end
+        btnJump.Text = "Jump: ["..jumpPower.."]" 
+        notify("JumpPower ajustada: "..jumpPower,Color3.fromRGB(100,200,100))
+    else
+        jumpInput.Text = tostring(jumpPower)
+        
+        notify("Valor Inválido!",Color3.fromRGB(250,100,100))
+    end
+end)
+
+-- SEÇÃO 3: SCRIPTS EXTERNOS / EXPLOITS
+local div3 = createDivider("Scripts Externos", frame) 
+
+local btnSpy = createButton("Simple Spy", BUTTON_HEIGHT, frame) 
+btnSpy.MouseButton1Click:Connect(function()
+    pcall(function()
+        local code = game:HttpGet("https://raw.githubusercontent.com/78n/SimpleSpy/main/SimpleSpySource.lua")
+        if code then
+            loadstring(code)()
+            notify("Simple Spy Executado!", Color3.fromRGB(50,200,50))
+        else
+            -- Tentativa secundária caso game:HttpGet não funcione
+            local success_async, code_async = pcall(game.HttpGetAsync, game, "https://raw.githubusercontent.com/78n/SimpleSpy/main/SimpleSpySource.lua")
+            if success_async and code_async then
+                loadstring(code_async)()
+                notify("Simple Spy Executado!", Color3.fromRGB(50,200,50))
+            else
+                notify("Erro ao carregar Simple Spy.", Color3.fromRGB(200,50,50))
+            end
+        end
+    end)
+end)
+
+local btnHydroxide = createButton("Hydroxide", BUTTON_HEIGHT, frame) 
+btnHydroxide.MouseButton1Click:Connect(function()
+    pcall(function()
+        local owner = "Upbolt"
+        local branch = "revision"
+
+        local function webImport(file)
+            local code = game:HttpGetAsync(("https://raw.githubusercontent.com/%s/Hydroxide/%s/%s.lua"):format(owner, branch, file))
+            if code then
+              
+                return loadstring(code, file .. '.lua')()
+            end
+            return nil
+        end
+
+        local initResult = webImport("init")
+        if initResult then
+            webImport("ui/main")
+            notify("Hydroxide Executado!", Color3.fromRGB(50,200,50))
+        else
+      
+            notify("Erro ao carregar Hydroxide.", Color3.fromRGB(200,50,50))
+        end
+    end)
+end)
+
+-- SEÇÃO 4: FUNNY TROLL
+local div4 = createDivider("Funny Troll", frame) 
+
+-- Toggle Super Ring com Confirmação
+local initialSRColor = ringPartsEnabled and COLOR_ON or COLOR_OFF
+local btnSuperRing = createButton(ringPartsEnabled and "Super Ring: [On]" or "Super Ring: [Off]", BUTTON_HEIGHT, frame, initialSRColor) 
+
+btnSuperRing.MouseEnter:Connect(function() 
+    TweenService:Create(btnSuperRing, TWEEN_INFO, {BackgroundColor3 = COLOR_HOVER_STATE}):Play() 
+end)
+btnSuperRing.MouseLeave:Connect(function() 
+    local targetColor = ringPartsEnabled and COLOR_ON or COLOR_OFF
+    TweenService:Create(btnSuperRing, TWEEN_INFO, {BackgroundColor3 = targetColor}):Play() 
+end)
+
+--- CORREÇÃO APLICADA: Confirmação SOMENTE na ativação
+btnSuperRing.MouseButton1Click:Connect(function()
+    
+    if not ringPartsEnabled then
+        showConfirmation("Deseja Ativar o Super Ring?", function()
+            executeToggleSuperRing(btnSuperRing)
+        end)
+    else
+        executeToggleSuperRing(btnSuperRing)
+    end
+end)
+
+-- =========================================================================
+-- LOOP E EVENTOS (NOCLIP/FLY CONTINUOUS CHECK)
+-- =========================================================================
+
+RunService.Stepped:Connect(function()
+    if character and rootPart then
+        if noclipEnabled or flyEnabled then
+            -- Se Fly OU Noclip estiver ativo, TODAS as partes devem ter CanCollide = false
+            for _, part in character:GetDescendants() do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        else
+            -- Restaura a colisão apenas se NENHUM estiver ativo
+            for _, part in character:GetDescendants() do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+        
+        -- Garante que PlatformStand esteja correto (só Fly deve ativá-lo)
+        if humanoid then
+            if flyEnabled then
+       
+                humanoid.PlatformStand = true
+            else
+                humanoid.PlatformStand = false
+            end
+        end
+    end
+end)
