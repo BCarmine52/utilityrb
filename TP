@@ -1,0 +1,396 @@
+-- LocalScript para criar a interface (HUD) e todas as suas funcionalidades.
+
+-- Pausa inicial de segurança para garantir que o ambiente Roblox esteja pronto
+task.wait(0.1) 
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local VirtualUser = game:GetService("VirtualUser") 
+local UserInputService = game:GetService("UserInputService") 
+
+local CurrentScript = script 
+
+-- Variável para armazenar o CFrame salvo.
+local SavedCFrame = nil 
+-- Variável de estado: Começa como FALSE (OFF)
+local isTeleportActive = false 
+-- Nova variável: estado do Anti-AFK 
+local isAntiAFKActive = true 
+
+-- === CONFIGURAÇÕES VISUAIS ESTILIZADAS (FOFINHO MODIFICADO) ===
+local FRAME_BG_COLOR = Color3.fromRGB(255, 230, 230) 
+local BORDER_COLOR = Color3.fromRGB(200, 100, 100)
+local ACCENT_COLOR_ON = Color3.fromRGB(0, 150, 0)     
+local ACCENT_COLOR_OFF = Color3.fromRGB(200, 0, 0)    
+local HOVER_COLOR = Color3.fromRGB(255, 200, 200)   
+local TEXT_COLOR_DARK = Color3.fromRGB(50, 50, 50)  
+local TEXT_COLOR_LIGHT = Color3.fromRGB(255, 255, 255) 
+local CORNER_RADIUS = 15                           
+
+-- Configurações de Dados (Mantidas)
+local DefaultButtonText = "Set Spawn"
+local SavedButtonText = "Spawn Salvo!"
+local SavedButtonColor = ACCENT_COLOR_ON             
+local DefaultButtonColor = Color3.fromRGB(255, 255, 255) 
+local FeedbackDuration = 2 
+
+-- Configurações do Toggle
+local TeleportOnText = "Teleporte: ON"
+local TeleportOffText = "Teleporte: OFF"
+local TeleportOnColor = ACCENT_COLOR_ON
+local TeleportOffColor = ACCENT_COLOR_OFF 
+
+-- === CRIAÇÃO DA INTERFACE ===
+
+-- Cria o ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TeleportControl"
+ScreenGui.Parent = PlayerGui
+ScreenGui.ResetOnSpawn = false 
+
+-- Cria o Frame Principal (Container)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 260, 0, 200) 
+MainFrame.Position = UDim2.new(0, 50, 0.5, -100) 
+MainFrame.AnchorPoint = Vector2.new(0, 0.5) 
+MainFrame.BackgroundColor3 = FRAME_BG_COLOR 
+MainFrame.BackgroundTransparency = 0.05 
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+-- Corner no Frame Principal
+local UICornerFrame = Instance.new("UICorner")
+UICornerFrame.CornerRadius = UDim.new(0, CORNER_RADIUS)
+UICornerFrame.Parent = MainFrame
+
+-- Contorno suave (UIStroke)
+local UIStrokeBorder = Instance.new("UIStroke")
+UIStrokeBorder.Color = BORDER_COLOR
+UIStrokeBorder.Thickness = 2 
+UIStrokeBorder.Transparency = 0.0 
+UIStrokeBorder.LineJoinMode = Enum.LineJoinMode.Round
+UIStrokeBorder.Parent = MainFrame
+
+-- TÍTULO "Utility v 1.0" 
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Name = "TitleLabel"
+TitleLabel.Size = UDim2.new(1, 0, 0, 35) 
+TitleLabel.Position = UDim2.new(0, 0, 0, 0) 
+TitleLabel.Text = "Utility v 1.0" 
+TitleLabel.Font = Enum.Font.FredokaOne
+TitleLabel.TextSize = 20
+TitleLabel.TextColor3 = TEXT_COLOR_DARK
+TitleLabel.BackgroundColor3 = Color3.fromRGB(255, 200, 200) 
+TitleLabel.BackgroundTransparency = 0.0
+TitleLabel.Parent = MainFrame
+TitleLabel.ZIndex = 2
+TitleLabel.Active = true -- Essencial para capturar o clique
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Corner para o Título 
+local UICornerTitle = Instance.new("UICorner")
+UICornerTitle.CornerRadius = UDim.new(0, CORNER_RADIUS)
+UICornerTitle.Parent = TitleLabel
+
+-- Cria o botão de Fechar (X)
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Size = UDim2.new(0, 35, 0, 35) 
+CloseButton.Position = UDim2.new(1, -35, 0, 0) 
+CloseButton.Text = "X"
+CloseButton.Font = Enum.Font.FredokaOne
+CloseButton.TextSize = 20
+CloseButton.TextColor3 = TEXT_COLOR_LIGHT
+CloseButton.BackgroundColor3 = ACCENT_COLOR_OFF 
+CloseButton.BackgroundTransparency = 0.0 
+CloseButton.Parent = MainFrame
+CloseButton.ZIndex = 3 
+local UICornerClose = Instance.new("UICorner")
+UICornerClose.CornerRadius = UDim.new(0, CORNER_RADIUS / 2) 
+UICornerClose.Parent = CloseButton
+
+-- Cria o botão "Set Spawn"
+local SetSpawnButton = Instance.new("TextButton")
+SetSpawnButton.Name = "SetSpawnButton"
+SetSpawnButton.Size = UDim2.new(0.8, 0, 0, 50) 
+SetSpawnButton.Position = UDim2.new(0.1, 0, 0, 45) 
+SetSpawnButton.Text = DefaultButtonText
+SetSpawnButton.Font = Enum.Font.FredokaOne
+SetSpawnButton.TextSize = 20
+SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
+SetSpawnButton.BackgroundColor3 = DefaultButtonColor 
+SetSpawnButton.Parent = MainFrame
+
+local UICornerButton = Instance.new("UICorner")
+UICornerButton.CornerRadius = UDim.new(0, CORNER_RADIUS)
+UICornerButton.Parent = SetSpawnButton
+
+-- CRIA O BOTÃO DE TOGGLE (ON/OFF)
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = UDim2.new(0.8, 0, 0, 45) 
+ToggleButton.Position = UDim2.new(0.1, 0, 0, 105) 
+ToggleButton.Text = TeleportOffText 
+ToggleButton.Font = Enum.Font.FredokaOne
+ToggleButton.TextSize = 20
+ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
+ToggleButton.BackgroundColor3 = TeleportOffColor 
+ToggleButton.Parent = MainFrame
+
+local UICornerToggle = Instance.new("UICorner")
+UICornerToggle.CornerRadius = UDim.new(0, CORNER_RADIUS)
+UICornerToggle.Parent = ToggleButton
+
+-- CRIA A NOTIFICAÇÃO (TextLabel)
+local NotificationLabel = Instance.new("TextLabel")
+NotificationLabel.Name = "NotificationLabel"
+NotificationLabel.Size = UDim2.new(0.9, 0, 0, 30) 
+NotificationLabel.Position = UDim2.new(0.05, 0, 0, 165)
+NotificationLabel.Text = "// Ready to Save!"
+NotificationLabel.Font = Enum.Font.SourceSans
+NotificationLabel.TextSize = 14
+NotificationLabel.TextColor3 = TEXT_COLOR_DARK
+NotificationLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255) 
+NotificationLabel.BackgroundTransparency = 0.8 
+NotificationLabel.Visible = false 
+NotificationLabel.Parent = MainFrame
+
+
+-- === 2. LÓGICA DE FUNÇÕES (MANTIDO INALTERADO) ===
+
+local function ShowNotification(text, duration, color)
+    NotificationLabel.Text = text
+    NotificationLabel.TextColor3 = color or TEXT_COLOR_DARK
+    NotificationLabel.BackgroundTransparency = 0.8
+    NotificationLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255) 
+    NotificationLabel.Visible = true
+
+    task.delay(duration or 3, function()
+        if NotificationLabel and NotificationLabel.Visible then
+            NotificationLabel.Visible = false
+        end
+    end)
+end
+
+-- SALVA A POSIÇÃO
+local function SaveCurrentPosition()
+    local Character = LocalPlayer.Character
+    if Character and Character:FindFirstChild("HumanoidRootPart") then
+        local HRP = Character.HumanoidRootPart
+        
+        local wasNil = (SavedCFrame == nil)
+        
+        SavedCFrame = HRP.CFrame 
+        
+        SetSpawnButton.Text = SavedButtonText
+        SetSpawnButton.BackgroundColor3 = SavedButtonColor
+        SetSpawnButton.TextColor3 = TEXT_COLOR_LIGHT
+        
+        task.delay(FeedbackDuration, function()
+            if SetSpawnButton and SetSpawnButton.Text == SavedButtonText then
+                SetSpawnButton.Text = DefaultButtonText
+                SetSpawnButton.BackgroundColor3 = DefaultButtonColor
+                SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
+            end
+        end)
+        
+        if wasNil then
+            isTeleportActive = true
+            ToggleButton.Text = TeleportOnText
+            ToggleButton.BackgroundColor3 = TeleportOnColor
+            ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
+            ShowNotification("Point Saved! Teleport ON.", 3, ACCENT_COLOR_ON)
+        end
+    else
+        warn("Personagem não encontrado.")
+    end
+end
+
+-- TELEPORTA PARA A POSIÇÃO SALVA
+local function TeleportToSavedPosition(Character)
+    if isTeleportActive and SavedCFrame then
+        local HRP = Character:WaitForChild("HumanoidRootPart", 5) 
+        if HRP then
+            local TeleportCFrame = SavedCFrame + Vector3.new(0, 1, 0) 
+            pcall(function()
+                HRP.CFrame = TeleportCFrame
+            end)
+        end
+    end
+end
+
+local function ToggleTeleport()
+    if not isTeleportActive and SavedCFrame == nil then
+        ShowNotification("Error: Save a point first!", 3, ACCENT_COLOR_OFF)
+        return
+    end
+    
+    isTeleportActive = not isTeleportActive
+    
+    if isTeleportActive then
+        ToggleButton.Text = TeleportOnText
+        ToggleButton.BackgroundColor3 = TeleportOnColor
+        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
+        ShowNotification("Teleport Activated!", 2, ACCENT_COLOR_ON)
+    else
+        ToggleButton.Text = TeleportOffText
+        ToggleButton.BackgroundColor3 = TeleportOffColor
+        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
+        ShowNotification("Teleport Deactivated.", 2, ACCENT_COLOR_OFF)
+    end
+end
+
+-- FUNÇÃO QUE LIMPA TUDO E DESTROI O SCRIPT
+local function CloseAndDestroyScript()
+    isAntiAFKActive = false 
+    SavedCFrame = nil 
+    isTeleportActive = false
+    
+    if ScreenGui and ScreenGui.Parent then
+        ScreenGui:Destroy()
+    end
+    CurrentScript:Destroy()
+    print("Script, HUD, e estados de spawn/teleporte resetados e destruídos.")
+end
+
+-- Função para garantir que a GUI fique na frente após o respawn
+local function EnsureGUIPriority()
+    if ScreenGui and PlayerGui then
+        ScreenGui.Parent = nil
+        task.wait(0.05) 
+        ScreenGui.Parent = PlayerGui
+    end
+end
+
+-- FUNÇÃO DE ANTI-AFK 
+local function StartAntiAFK()
+    while isAntiAFKActive do
+        task.wait(20) 
+        
+        local Character = LocalPlayer.Character
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        
+        if Character and Humanoid and Humanoid.Health > 0 then
+            VirtualUser:SendInput({
+                {
+                    KeyCode = Enum.KeyCode.Space,
+                    UserInputType = Enum.UserInputType.Keyboard,
+                    State = Enum.UserInputState.Begin
+                },
+                {
+                    KeyCode = Enum.KeyCode.Space,
+                    UserInputType = Enum.UserInputType.Keyboard,
+                    State = Enum.UserInputState.End
+                }
+            })
+        end
+    end
+end
+
+
+-- *** FUNÇÃO ARRASTÁVEL (APENAS PC/MOUSE) ***
+-- Esta função agora move o 'frameToMove' (MainFrame) quando o clique é detectado no 'frameClickTarget' (TitleLabel).
+local function MakeDraggable(frameToMove, frameClickTarget)
+    local drag = false
+    local dragStart = nil
+    
+    local function onInputBegan(input, gameProcessed)
+        -- Verifica se é o clique do mouse (Botão 1) E se o clique ocorreu no TitleLabel
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and not gameProcessed then
+            drag = true
+            dragStart = UserInputService:GetMouseLocation()
+            
+            -- Captura o fim do clique
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    drag = false
+                end
+            end)
+        end
+    end
+
+    local function onInputChanged(input)
+        -- Move o frame principal quando o arraste está ativo e o mouse se move
+        if drag and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mousePos = UserInputService:GetMouseLocation()
+            local delta = mousePos - dragStart
+            
+            -- Atualiza a posição do MainFrame
+            frameToMove.Position = UDim2.new(
+                0, frameToMove.Position.Offset.X + delta.X, 
+                0, frameToMove.Position.Offset.Y + delta.Y
+            )
+            
+            dragStart = mousePos
+        end
+    end
+    
+    -- Conecta os eventos de input ao TitleLabel
+    frameClickTarget.InputBegan:Connect(onInputBegan)
+    frameClickTarget.InputChanged:Connect(onInputChanged)
+end
+
+-- APLICA: Arrastar o MainFrame, clicando no TitleLabel
+MakeDraggable(MainFrame, TitleLabel)
+
+
+-- === 3. CONEXÕES DE EVENTOS E INICIALIZAÇÃO ===
+
+-- Inicia o Anti-AFK em uma thread separada
+task.spawn(StartAntiAFK) 
+
+SetSpawnButton.MouseButton1Click:Connect(SaveCurrentPosition)
+ToggleButton.MouseButton1Click:Connect(ToggleTeleport) 
+CloseButton.MouseButton1Click:Connect(CloseAndDestroyScript)
+
+-- Lógica de HOVER para o botão Set Spawn
+SetSpawnButton.MouseEnter:Connect(function()
+    if SetSpawnButton.Text ~= SavedButtonText then
+        SetSpawnButton.BackgroundColor3 = HOVER_COLOR
+    end
+end)
+
+SetSpawnButton.MouseLeave:Connect(function()
+    if SetSpawnButton.Text ~= SavedButtonText then
+        SetSpawnButton.BackgroundColor3 = DefaultButtonColor
+    end
+end)
+
+
+LocalPlayer.CharacterAdded:Connect(function(Character)
+    TeleportToSavedPosition(Character)
+    EnsureGUIPriority()
+    
+    -- Atualiza o estado visual do Toggle após o respawn
+    if isTeleportActive then
+        ToggleButton.Text = TeleportOnText
+        ToggleButton.BackgroundColor3 = TeleportOnColor
+        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
+    else
+        ToggleButton.Text = TeleportOffText
+        ToggleButton.BackgroundColor3 = TeleportOffColor
+        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
+    end
+    
+    -- Garante que o Set Spawn volte para a cor original (não salva) se for o caso
+    if SavedCFrame == nil then
+        SetSpawnButton.Text = DefaultButtonText
+        SetSpawnButton.BackgroundColor3 = DefaultButtonColor
+        SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
+    else
+        -- Se o ponto está salvo, o botão deve manter a cor de feedback (verde)
+        SetSpawnButton.Text = SavedButtonText
+        SetSpawnButton.BackgroundColor3 = SavedButtonColor
+        SetSpawnButton.TextColor3 = TEXT_COLOR_LIGHT
+        
+        task.delay(FeedbackDuration, function()
+            if SetSpawnButton.Text == SavedButtonText then
+                SetSpawnButton.Text = DefaultButtonText
+                SetSpawnButton.BackgroundColor3 = DefaultButtonColor
+                SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
+            end
+        end)
+    end
+end)
