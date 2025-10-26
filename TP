@@ -1,396 +1,845 @@
--- LocalScript para criar a interface (HUD) e todas as suas funcionalidades.
-
--- Pausa inicial de segurança para garantir que o ambiente Roblox esteja pronto
-task.wait(0.1) 
-
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local VirtualUser = game:GetService("VirtualUser") 
-local UserInputService = game:GetService("UserInputService") 
+local PlayerGui = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") or game.Players.LocalPlayer:WaitForChild("PlayerGui", 5) 
+local ReplicatedStorage = game:GetService("ReplicatedStorage") 
 
-local CurrentScript = script 
+if not PlayerGui then
+    error("Erro: PlayerGui não encontrado.")
+end
 
--- Variável para armazenar o CFrame salvo.
-local SavedCFrame = nil 
--- Variável de estado: Começa como FALSE (OFF)
-local isTeleportActive = false 
--- Nova variável: estado do Anti-AFK 
-local isAntiAFKActive = true 
+local Connections = {} 
+local FramePrincipal = nil 
 
--- === CONFIGURAÇÕES VISUAIS ESTILIZADAS (FOFINHO MODIFICADO) ===
-local FRAME_BG_COLOR = Color3.fromRGB(255, 230, 230) 
-local BORDER_COLOR = Color3.fromRGB(200, 100, 100)
-local ACCENT_COLOR_ON = Color3.fromRGB(0, 150, 0)     
-local ACCENT_COLOR_OFF = Color3.fromRGB(200, 0, 0)    
-local HOVER_COLOR = Color3.fromRGB(255, 200, 200)   
-local TEXT_COLOR_DARK = Color3.fromRGB(50, 50, 50)  
-local TEXT_COLOR_LIGHT = Color3.fromRGB(255, 255, 255) 
-local CORNER_RADIUS = 15                           
+local isSetSpawnActive = false
+local savedSpawnCFrame = nil 
 
--- Configurações de Dados (Mantidas)
-local DefaultButtonText = "Set Spawn"
-local SavedButtonText = "Spawn Salvo!"
-local SavedButtonColor = ACCENT_COLOR_ON             
-local DefaultButtonColor = Color3.fromRGB(255, 255, 255) 
-local FeedbackDuration = 2 
+local GoToFrame = nil 
+local PositionsFrame = nil 
 
--- Configurações do Toggle
-local TeleportOnText = "Teleporte: ON"
-local TeleportOffText = "Teleporte: OFF"
-local TeleportOnColor = ACCENT_COLOR_ON
-local TeleportOffColor = ACCENT_COLOR_OFF 
+local isDragging = false
+local dragStartOffset = Vector2.new(0, 0)
+local dragConnection = nil
+local isMinimized = false
 
--- === CRIAÇÃO DA INTERFACE ===
+local LARGURA_FRAME = 220 
+local ALTURA_MAXIMIZADA = 380 
+local ALTURA_MINIMIZADA = 35 
+local LARGURA_SUBFRAME = 220 
+local ALTURA_SUBFRAME_POS = 340 
+local ESPACO_ENTRE_FRAMES = 8 
 
--- Cria o ScreenGui
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "TeleportControl"
-ScreenGui.Parent = PlayerGui
-ScreenGui.ResetOnSpawn = false 
+local NotifyLabel = nil 
+local NOTIFY_DURACAO = 2 
 
--- Cria o Frame Principal (Container)
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 260, 0, 200) 
-MainFrame.Position = UDim2.new(0, 50, 0.5, -100) 
-MainFrame.AnchorPoint = Vector2.new(0, 0.5) 
-MainFrame.BackgroundColor3 = FRAME_BG_COLOR 
-MainFrame.BackgroundTransparency = 0.05 
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
+-- CORES HALLOWEEN: LARANJA E PRETO
+local COR_FUNDO_PRINCIPAL = Color3.fromRGB(30, 30, 30)         -- Cinza Escuro/Quase Preto
+local COR_FUNDO_SECUNDARIO = Color3.fromRGB(50, 50, 50)        -- Cinza Escuro
+local COR_TITULO_FUNDO = Color3.fromRGB(15, 15, 15)            -- Preto Profundo
+local COR_BORDA = Color3.fromRGB(255, 120, 0)                  -- Laranja Vibrante
+local COR_TEXTO_PADRAO = Color3.fromRGB(255, 180, 100)         -- Laranja Claro para texto
+local COR_BOTAO_PADRAO = Color3.fromRGB(70, 40, 0)             -- Laranja Escuro/Marrom
+local COR_BOTAO_HOVER = Color3.fromRGB(150, 80, 0)             -- Laranja Queimado no hover
+local COR_BOTAO_OFF = Color3.fromRGB(200, 50, 50)              -- Vermelho para OFF (Aviso)
+local COR_BOTAO_ON = Color3.fromRGB(50, 150, 50)               -- Verde para ON (Segurança/Ativo)
+local COR_FECHAR_BOTAO = Color3.fromRGB(255, 80, 0)            -- Laranja Brilhante para o X
+local COR_FECHAR_BOTAO_HOVER = Color3.fromRGB(255, 140, 50)    -- Laranja Mais Claro no hover
+local COR_INPUT_FUNDO = Color3.fromRGB(20, 20, 20)             -- Preto para input
 
--- Corner no Frame Principal
-local UICornerFrame = Instance.new("UICorner")
-UICornerFrame.CornerRadius = UDim.new(0, CORNER_RADIUS)
-UICornerFrame.Parent = MainFrame
+local SUB_FRAMES_ORDEM = {
+    function() return PositionsFrame end,
+    function() return GoToFrame end,
+}
 
--- Contorno suave (UIStroke)
-local UIStrokeBorder = Instance.new("UIStroke")
-UIStrokeBorder.Color = BORDER_COLOR
-UIStrokeBorder.Thickness = 2 
-UIStrokeBorder.Transparency = 0.0 
-UIStrokeBorder.LineJoinMode = Enum.LineJoinMode.Round
-UIStrokeBorder.Parent = MainFrame
+local function ReverterEEncerrar()
 
--- TÍTULO "Utility v 1.0" 
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Name = "TitleLabel"
-TitleLabel.Size = UDim2.new(1, 0, 0, 35) 
-TitleLabel.Position = UDim2.new(0, 0, 0, 0) 
-TitleLabel.Text = "Utility v 1.0" 
-TitleLabel.Font = Enum.Font.FredokaOne
-TitleLabel.TextSize = 20
-TitleLabel.TextColor3 = TEXT_COLOR_DARK
-TitleLabel.BackgroundColor3 = Color3.fromRGB(255, 200, 200) 
-TitleLabel.BackgroundTransparency = 0.0
-TitleLabel.Parent = MainFrame
-TitleLabel.ZIndex = 2
-TitleLabel.Active = true -- Essencial para capturar o clique
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+    isSetSpawnActive = false 
 
--- Corner para o Título 
-local UICornerTitle = Instance.new("UICorner")
-UICornerTitle.CornerRadius = UDim.new(0, CORNER_RADIUS)
-UICornerTitle.Parent = TitleLabel
+    for _, connection in pairs(Connections) do
+        if connection and typeof(connection) == "RBXScriptConnection" then
+            connection:Disconnect()
+        end
+    end
+    Connections = {} 
+    
+    if dragConnection then
+        dragConnection:Disconnect()
+        dragConnection = nil
+    end
+    
+    local InterfacePrincipal = PlayerGui:FindFirstChild("InterfacePrincipal")
+    if InterfacePrincipal and InterfacePrincipal.Parent then
+        InterfacePrincipal:Destroy()
+    end
+end
 
--- Cria o botão de Fechar (X)
-local CloseButton = Instance.new("TextButton")
-CloseButton.Name = "CloseButton"
-CloseButton.Size = UDim2.new(0, 35, 0, 35) 
-CloseButton.Position = UDim2.new(1, -35, 0, 0) 
-CloseButton.Text = "X"
-CloseButton.Font = Enum.Font.FredokaOne
-CloseButton.TextSize = 20
-CloseButton.TextColor3 = TEXT_COLOR_LIGHT
-CloseButton.BackgroundColor3 = ACCENT_COLOR_OFF 
-CloseButton.BackgroundTransparency = 0.0 
-CloseButton.Parent = MainFrame
-CloseButton.ZIndex = 3 
-local UICornerClose = Instance.new("UICorner")
-UICornerClose.CornerRadius = UDim.new(0, CORNER_RADIUS / 2) 
-UICornerClose.Parent = CloseButton
+local function updateSubFramePositions(mainX, mainY)
+    
+    if not FramePrincipal then return end
+    
+    local mainXOffset = mainX or FramePrincipal.Position.X.Offset
+    local mainYOffset = mainY or FramePrincipal.Position.Y.Offset
+    local mainYScale = FramePrincipal.Position.Y.Scale
+    
+    local currentXOffset = mainXOffset + LARGURA_FRAME + ESPACO_ENTRE_FRAMES
+    
+    for _, getFrame in ipairs(SUB_FRAMES_ORDEM) do
+        local frame = getFrame()
+        
+        if frame and frame.Parent then
+            
+            frame.Position = UDim2.new(0, currentXOffset, mainYScale, mainYOffset)
+            
+            currentXOffset = currentXOffset + LARGURA_SUBFRAME + ESPACO_ENTRE_FRAMES
+        end
+    end
+end
 
--- Cria o botão "Set Spawn"
-local SetSpawnButton = Instance.new("TextButton")
-SetSpawnButton.Name = "SetSpawnButton"
-SetSpawnButton.Size = UDim2.new(0.8, 0, 0, 50) 
-SetSpawnButton.Position = UDim2.new(0.1, 0, 0, 45) 
-SetSpawnButton.Text = DefaultButtonText
-SetSpawnButton.Font = Enum.Font.FredokaOne
-SetSpawnButton.TextSize = 20
-SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
-SetSpawnButton.BackgroundColor3 = DefaultButtonColor 
-SetSpawnButton.Parent = MainFrame
+local function AlternarMinimizar(Botao, Frame)
+    
+    isMinimized = not isMinimized
 
-local UICornerButton = Instance.new("UICorner")
-UICornerButton.CornerRadius = UDim.new(0, CORNER_RADIUS)
-UICornerButton.Parent = SetSpawnButton
+    local targetSizeMain = isMinimized and UDim2.new(0, LARGURA_FRAME, 0, ALTURA_MINIMIZADA) or UDim2.new(0, LARGURA_FRAME, 0, ALTURA_MAXIMIZADA)
+    local targetText = isMinimized and "+" or "-"
+    local ShadowFrame = PlayerGui.InterfacePrincipal:FindFirstChild("ShadowFrame")
+    
+    local targetSizePos = isMinimized and UDim2.new(0, LARGURA_SUBFRAME, 0, ALTURA_MINIMIZADA) or UDim2.new(0, LARGURA_SUBFRAME, 0, ALTURA_SUBFRAME_POS)
+    local targetSizeGoTo = isMinimized and UDim2.new(0, LARGURA_SUBFRAME, 0, ALTURA_MINIMIZADA) or UDim2.new(0, LARGURA_SUBFRAME, 0, ALTURA_MAXIMIZADA)
+    local isVisible = not isMinimized
 
--- CRIA O BOTÃO DE TOGGLE (ON/OFF)
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Name = "ToggleButton"
-ToggleButton.Size = UDim2.new(0.8, 0, 0, 45) 
-ToggleButton.Position = UDim2.new(0.1, 0, 0, 105) 
-ToggleButton.Text = TeleportOffText 
-ToggleButton.Font = Enum.Font.FredokaOne
-ToggleButton.TextSize = 20
-ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
-ToggleButton.BackgroundColor3 = TeleportOffColor 
-ToggleButton.Parent = MainFrame
+    Frame.Size = targetSizeMain
+    Botao.Text = targetText
+    
+    for _, child in pairs(Frame:GetChildren()) do
+        if child:IsA("GuiObject") and child.Name ~= "BotaoFechar" and child.Name ~= "BotaoMinimizar" and child.Name ~= "LabelTitulo" and child.Name ~= "NotifyLabel" then
+            child.Visible = isVisible
+        end
+    end
+    if NotifyLabel then NotifyLabel.Visible = isVisible and not isMinimized end 
 
-local UICornerToggle = Instance.new("UICorner")
-UICornerToggle.CornerRadius = UDim.new(0, CORNER_RADIUS)
-UICornerToggle.Parent = ToggleButton
+    if ShadowFrame then
+        local targetShadowH = isMinimized and ALTURA_MINIMIZADA + 4 or ALTURA_MAXIMIZADA + 4
+        ShadowFrame.Size = UDim2.new(0, LARGURA_FRAME + 4, 0, targetShadowH)
+    end
+    
+    if PositionsFrame then
+        PositionsFrame.Size = targetSizePos
+        
+        for _, child in pairs(PositionsFrame:GetChildren()) do
+            if child:IsA("GuiObject") and child.Name ~= "LabelTituloPos" then
+                child.Visible = isVisible
+            end
+        end
+    end
+    
+    if GoToFrame then
+         GoToFrame.Size = targetSizeGoTo
+         
+         for _, child in pairs(GoToFrame:GetChildren()) do
+            if child:IsA("GuiObject") and child.Name ~= "LabelTituloGoTo" then
+                child.Visible = isVisible
+            end
+        end
+        
+        local playerList = GoToFrame:FindFirstChild("PlayerList")
+        if playerList and playerList:IsA("ScrollingFrame") then
+            playerList.Visible = isVisible
+        end
+    end
+    
+    updateSubFramePositions()
+end
 
--- CRIA A NOTIFICAÇÃO (TextLabel)
-local NotificationLabel = Instance.new("TextLabel")
-NotificationLabel.Name = "NotificationLabel"
-NotificationLabel.Size = UDim2.new(0.9, 0, 0, 30) 
-NotificationLabel.Position = UDim2.new(0.05, 0, 0, 165)
-NotificationLabel.Text = "// Ready to Save!"
-NotificationLabel.Font = Enum.Font.SourceSans
-NotificationLabel.TextSize = 14
-NotificationLabel.TextColor3 = TEXT_COLOR_DARK
-NotificationLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255) 
-NotificationLabel.BackgroundTransparency = 0.8 
-NotificationLabel.Visible = false 
-NotificationLabel.Parent = MainFrame
+local function showNotify(message)
+    if not NotifyLabel then return end
+    
+    NotifyLabel.BackgroundTransparency = 1 
+    NotifyLabel.TextTransparency = 1 
+    
+    NotifyLabel.Text = message
+    NotifyLabel.Visible = true
+    
+    task.spawn(function()
+        for i = 1, 10 do
+            NotifyLabel.BackgroundTransparency = 0.9 - (i * 0.09) 
+            NotifyLabel.TextTransparency = 1 - (i * 0.1) 
+            task.wait(0.02)
+        end
+        
+        task.wait(NOTIFY_DURACAO)
+        
+        for i = 1, 10 do
+            NotifyLabel.BackgroundTransparency = 0 + (i * 0.09) 
+            NotifyLabel.TextTransparency = 0 + (i * 0.1) 
+            task.wait(0.02)
+        end
+        
+        NotifyLabel.Visible = false
+        NotifyLabel.BackgroundTransparency = 1
+        NotifyLabel.TextTransparency = 1
+    end)
+end
 
+local InterfacePrincipal = Instance.new("ScreenGui")
+InterfacePrincipal.Name = "InterfacePrincipal"
+InterfacePrincipal.Enabled = true
+InterfacePrincipal.ResetOnSpawn = false
+InterfacePrincipal.Parent = PlayerGui
 
--- === 2. LÓGICA DE FUNÇÕES (MANTIDO INALTERADO) ===
+local ShadowFrame = Instance.new("Frame")
+ShadowFrame.Name = "ShadowFrame"
+ShadowFrame.Size = UDim2.new(0, LARGURA_FRAME + 4, 0, ALTURA_MAXIMIZADA + 4) 
+ShadowFrame.Position = UDim2.new(0, 8, 0.5, -ALTURA_MAXIMIZADA/2 + 2) 
+ShadowFrame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05) 
+ShadowFrame.BackgroundTransparency = 0.6 
+ShadowFrame.BorderSizePixel = 0
+ShadowFrame.ZIndex = 0
+ShadowFrame.Parent = InterfacePrincipal
 
-local function ShowNotification(text, duration, color)
-    NotificationLabel.Text = text
-    NotificationLabel.TextColor3 = color or TEXT_COLOR_DARK
-    NotificationLabel.BackgroundTransparency = 0.8
-    NotificationLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255) 
-    NotificationLabel.Visible = true
+local ShadowCorner = Instance.new("UICorner")
+ShadowCorner.CornerRadius = UDim.new(0, 15)
+ShadowCorner.Parent = ShadowFrame
 
-    task.delay(duration or 3, function()
-        if NotificationLabel and NotificationLabel.Visible then
-            NotificationLabel.Visible = false
+FramePrincipal = Instance.new("Frame") 
+FramePrincipal.Name = "FramePrincipal"
+FramePrincipal.Size = UDim2.new(0, LARGURA_FRAME, 0, ALTURA_MAXIMIZADA) 
+FramePrincipal.Position = UDim2.new(0, 10, 0.5, -ALTURA_MAXIMIZADA/2) 
+FramePrincipal.BackgroundColor3 = COR_FUNDO_PRINCIPAL 
+FramePrincipal.BorderSizePixel = 0 
+FramePrincipal.Active = true 
+FramePrincipal.Parent = InterfacePrincipal
+FramePrincipal.ZIndex = 1
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 15)
+MainCorner.Parent = FramePrincipal
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = COR_BORDA
+MainStroke.Transparency = 0 
+MainStroke.Thickness = 2
+MainStroke.Parent = FramePrincipal
+
+local LabelTitulo = Instance.new("TextLabel")
+LabelTitulo.Name = "LabelTitulo"
+LabelTitulo.Size = UDim2.new(1, -70, 0, ALTURA_MINIMIZADA) 
+LabelTitulo.Position = UDim2.new(0, 0, 0, 0)
+LabelTitulo.BackgroundColor3 = COR_TITULO_FUNDO 
+LabelTitulo.BackgroundTransparency = 0
+LabelTitulo.Text = "UTILITY v2.0"
+LabelTitulo.TextColor3 = COR_TEXTO_PADRAO
+LabelTitulo.Font = Enum.Font.Creepster 
+LabelTitulo.TextSize = 22 
+LabelTitulo.TextXAlignment = Enum.TextXAlignment.Center
+LabelTitulo.TextYAlignment = Enum.TextYAlignment.Center 
+LabelTitulo.TextWrapped = true
+LabelTitulo.Parent = FramePrincipal
+LabelTitulo.ZIndex = 2 
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 15)
+TitleCorner.Parent = LabelTitulo
+
+local BotaoFechar = Instance.new("TextButton")
+BotaoFechar.Name = "BotaoFechar"
+BotaoFechar.Size = UDim2.new(0, 35, 0, ALTURA_MINIMIZADA) 
+BotaoFechar.Position = UDim2.new(1, -35, 0, 0) 
+BotaoFechar.BackgroundColor3 = COR_FECHAR_BOTAO 
+BotaoFechar.Text = "X"
+BotaoFechar.TextColor3 = COR_TITULO_FUNDO 
+BotaoFechar.Font = Enum.Font.Creepster 
+BotaoFechar.TextSize = 24 
+BotaoFechar.TextYAlignment = Enum.TextYAlignment.Center 
+BotaoFechar.Parent = FramePrincipal
+BotaoFechar.ZIndex = 3 
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 15)
+CloseCorner.Parent = BotaoFechar
+local CloseStroke = Instance.new("UIStroke")
+CloseStroke.Color = COR_BORDA
+CloseStroke.Transparency = 0
+CloseStroke.Thickness = 1
+CloseStroke.Parent = BotaoFechar
+
+BotaoFechar.MouseEnter:Connect(function() BotaoFechar.BackgroundColor3 = COR_FECHAR_BOTAO_HOVER end)
+BotaoFechar.MouseLeave:Connect(function() BotaoFechar.BackgroundColor3 = COR_FECHAR_BOTAO end)
+
+local FecharConexao = BotaoFechar.MouseButton1Click:Connect(ReverterEEncerrar)
+table.insert(Connections, FecharConexao) 
+
+local BotaoMinimizar = Instance.new("TextButton")
+BotaoMinimizar.Name = "BotaoMinimizar"
+BotaoMinimizar.Size = UDim2.new(0, 35, 0, ALTURA_MINIMIZADA) 
+BotaoMinimizar.Position = UDim2.new(1, -75, 0, 0) 
+BotaoMinimizar.BackgroundColor3 = COR_BOTAO_PADRAO 
+BotaoMinimizar.Text = "-"
+BotaoMinimizar.TextColor3 = COR_TEXTO_PADRAO 
+BotaoMinimizar.Font = Enum.Font.Creepster 
+BotaoMinimizar.TextSize = 24
+BotaoMinimizar.TextYAlignment = Enum.TextYAlignment.Center 
+BotaoMinimizar.Parent = FramePrincipal
+BotaoMinimizar.ZIndex = 3 
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 15)
+MinCorner.Parent = BotaoMinimizar
+local MinStroke = Instance.new("UIStroke")
+MinStroke.Color = COR_BORDA
+MinStroke.Transparency = 0
+MinStroke.Thickness = 1
+MinStroke.Parent = BotaoMinimizar
+
+BotaoMinimizar.MouseEnter:Connect(function() BotaoMinimizar.BackgroundColor3 = COR_BOTAO_HOVER end)
+BotaoMinimizar.MouseLeave:Connect(function() BotaoMinimizar.BackgroundColor3 = COR_BOTAO_PADRAO end)
+
+local MinimizarConexao = BotaoMinimizar.MouseButton1Click:Connect(function() AlternarMinimizar(BotaoMinimizar, FramePrincipal) end)
+table.insert(Connections, MinimizarConexao)
+
+NotifyLabel = Instance.new("TextLabel")
+NotifyLabel.Name = "NotifyLabel"
+NotifyLabel.Size = UDim2.new(1, 0, 0, 25) 
+NotifyLabel.Position = UDim2.new(0, 0, 1, -25) 
+NotifyLabel.BackgroundColor3 = COR_BORDA 
+NotifyLabel.BackgroundTransparency = 1 
+NotifyLabel.Text = ""
+NotifyLabel.TextColor3 = COR_TITULO_FUNDO 
+NotifyLabel.TextTransparency = 1 
+NotifyLabel.Font = Enum.Font.SourceSansBold 
+NotifyLabel.TextSize = 16
+NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center 
+NotifyLabel.ZIndex = 4 
+NotifyLabel.Visible = false
+NotifyLabel.Parent = FramePrincipal
+
+local NotifyCorner = Instance.new("UICorner")
+NotifyCorner.CornerRadius = UDim.new(0, 10)
+NotifyCorner.Parent = NotifyLabel
+
+local function TeleportToSpawn(character)
+    task.spawn(function() 
+        local HRP = character:WaitForChild("HumanoidRootPart", 5) 
+
+        if isSetSpawnActive and savedSpawnCFrame and HRP then
+            task.wait(0.1) 
+            HRP.CFrame = savedSpawnCFrame + Vector3.new(0, 3, 0)
+            showNotify("Teleportado para o Spawn Salvo.")
         end
     end)
 end
 
--- SALVA A POSIÇÃO
-local function SaveCurrentPosition()
+local CharacterAddedConexao = LocalPlayer.CharacterAdded:Connect(TeleportToSpawn)
+table.insert(Connections, CharacterAddedConexao)
+
+local function CopiarPosicao()
     local Character = LocalPlayer.Character
-    if Character and Character:FindFirstChild("HumanoidRootPart") then
-        local HRP = Character.HumanoidRootPart
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    
+    if HRP then
+        local pos = HRP.CFrame.p
+        local roundedPos = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
         
-        local wasNil = (SavedCFrame == nil)
-        
-        SavedCFrame = HRP.CFrame 
-        
-        SetSpawnButton.Text = SavedButtonText
-        SetSpawnButton.BackgroundColor3 = SavedButtonColor
-        SetSpawnButton.TextColor3 = TEXT_COLOR_LIGHT
-        
-        task.delay(FeedbackDuration, function()
-            if SetSpawnButton and SetSpawnButton.Text == SavedButtonText then
-                SetSpawnButton.Text = DefaultButtonText
-                SetSpawnButton.BackgroundColor3 = DefaultButtonColor
-                SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
-            end
-        end)
-        
-        if wasNil then
-            isTeleportActive = true
-            ToggleButton.Text = TeleportOnText
-            ToggleButton.BackgroundColor3 = TeleportOnColor
-            ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
-            ShowNotification("Point Saved! Teleport ON.", 3, ACCENT_COLOR_ON)
+        if ReplicatedStorage:FindFirstChild("ClipboardFunction") then
+            ReplicatedStorage.ClipboardFunction:InvokeClient(LocalPlayer, roundedPos)
+        else
+            setclipboard(roundedPos)
         end
+        
+        showNotify("Posição Copiada!") 
     else
-        warn("Personagem não encontrado.")
+        showNotify("ERRO: Personagem não encontrado para copiar posição.")
     end
 end
 
--- TELEPORTA PARA A POSIÇÃO SALVA
-local function TeleportToSavedPosition(Character)
-    if isTeleportActive and SavedCFrame then
-        local HRP = Character:WaitForChild("HumanoidRootPart", 5) 
+local function AtivarSalvarSpawn(Botao)
+    isSetSpawnActive = not isSetSpawnActive
+    
+    if isSetSpawnActive then
+        local Character = LocalPlayer.Character
+        local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+        
         if HRP then
-            local TeleportCFrame = SavedCFrame + Vector3.new(0, 1, 0) 
-            pcall(function()
-                HRP.CFrame = TeleportCFrame
-            end)
+            savedSpawnCFrame = HRP.CFrame
+            Botao.BackgroundColor3 = COR_BOTAO_ON 
+            Botao.Text = "Set Spawn [ON]"
+            showNotify("Spawn salvo e ativo!")
+        else
+            isSetSpawnActive = false
+            Botao.BackgroundColor3 = COR_BOTAO_OFF 
+            Botao.Text = "Set Spawn [OFF]"
+            showNotify("ERRO: Personagem não encontrado.")
         end
+        
+    else
+        savedSpawnCFrame = nil
+        Botao.BackgroundColor3 = COR_BOTAO_OFF 
+        Botao.Text = "Set Spawn [OFF]"
+        showNotify("Set Spawn desativado.")
     end
 end
 
-local function ToggleTeleport()
-    if not isTeleportActive and SavedCFrame == nil then
-        ShowNotification("Error: Save a point first!", 3, ACCENT_COLOR_OFF)
+local function TeleportarParaPosicao(TextBox)
+    local Character = LocalPlayer.Character
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    
+    if not HRP then
+        showNotify("ERRO: Personagem não encontrado.")
         return
     end
+
+    local text = TextBox.Text:gsub("%s", "")
+    local parts = {}
     
-    isTeleportActive = not isTeleportActive
-    
-    if isTeleportActive then
-        ToggleButton.Text = TeleportOnText
-        ToggleButton.BackgroundColor3 = TeleportOnColor
-        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
-        ShowNotification("Teleport Activated!", 2, ACCENT_COLOR_ON)
+    for part in text:gmatch("([^,]+)") do
+        table.insert(parts, tonumber(part))
+    end
+
+    if #parts == 3 and parts[1] and parts[2] and parts[3] then
+        local newPos = Vector3.new(parts[1], parts[2] + 2, parts[3]) 
+        HRP.CFrame = CFrame.new(newPos)
+        showNotify("Teleportado para X:" .. parts[1] .. " Y:" .. parts[2] .. " Z:" .. parts[3])
+        TextBox.Text = "" 
     else
-        ToggleButton.Text = TeleportOffText
-        ToggleButton.BackgroundColor3 = TeleportOffColor
-        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
-        ShowNotification("Teleport Deactivated.", 2, ACCENT_COLOR_OFF)
+        showNotify("ERRO: Formato inválido. Use X, Y, Z.")
     end
 end
 
--- FUNÇÃO QUE LIMPA TUDO E DESTROI O SCRIPT
-local function CloseAndDestroyScript()
-    isAntiAFKActive = false 
-    SavedCFrame = nil 
-    isTeleportActive = false
+
+local function CreatePositionsFrame()
+    PositionsFrame = Instance.new("Frame")
+    PositionsFrame.Name = "PositionsFrame"
+    local targetHeight = isMinimized and ALTURA_MINIMIZADA or ALTURA_SUBFRAME_POS
+    PositionsFrame.Size = UDim2.new(0, LARGURA_SUBFRAME, 0, targetHeight) 
+    PositionsFrame.BackgroundColor3 = COR_FUNDO_PRINCIPAL 
+    PositionsFrame.BorderSizePixel = 0 
+    PositionsFrame.Active = true 
+    PositionsFrame.Parent = InterfacePrincipal 
+    PositionsFrame.ZIndex = 1
     
-    if ScreenGui and ScreenGui.Parent then
-        ScreenGui:Destroy()
-    end
-    CurrentScript:Destroy()
-    print("Script, HUD, e estados de spawn/teleporte resetados e destruídos.")
+    PositionsFrame.Position = FramePrincipal.Position 
+
+    local PosCorner = Instance.new("UICorner")
+    PosCorner.CornerRadius = UDim.new(0, 15)
+    PosCorner.Parent = PositionsFrame
+    local PosStroke = Instance.new("UIStroke")
+    PosStroke.Color = COR_BORDA
+    PosStroke.Transparency = 0
+    PosStroke.Thickness = 2
+    PosStroke.Parent = PositionsFrame
+    
+    local LabelTituloPos = Instance.new("TextLabel")
+    LabelTituloPos.Name = "LabelTituloPos"
+    LabelTituloPos.Size = UDim2.new(1, 0, 0, ALTURA_MINIMIZADA) 
+    LabelTituloPos.Position = UDim2.new(0, 0, 0, 0)
+    LabelTituloPos.BackgroundColor3 = COR_TITULO_FUNDO 
+    LabelTituloPos.Text = "POSITIONS" 
+    LabelTituloPos.TextColor3 = COR_TEXTO_PADRAO
+    LabelTituloPos.Font = Enum.Font.Creepster 
+    LabelTituloPos.TextSize = 22
+    LabelTituloPos.TextYAlignment = Enum.TextYAlignment.Center 
+    LabelTituloPos.Parent = PositionsFrame
+
+    local PosTitleCorner = Instance.new("UICorner")
+    PosTitleCorner.CornerRadius = UDim.new(0, 15)
+    PosTitleCorner.Parent = LabelTituloPos
+
+    local isVisible = not isMinimized 
+    
+    local BotaoCopyPos = Instance.new("TextButton")
+    BotaoCopyPos.Name = "BotaoCopyPos"
+    BotaoCopyPos.Size = UDim2.new(0.9, 0, 0.1, 0) 
+    BotaoCopyPos.Position = UDim2.new(0.5, 0, 0.15, 0) 
+    BotaoCopyPos.AnchorPoint = Vector2.new(0.5, 0)
+    BotaoCopyPos.BackgroundColor3 = COR_BOTAO_PADRAO 
+    BotaoCopyPos.Text = "Copy Position" 
+    BotaoCopyPos.TextColor3 = COR_TEXTO_PADRAO
+    BotaoCopyPos.Font = Enum.Font.Creepster 
+    BotaoCopyPos.TextSize = 18
+    BotaoCopyPos.TextYAlignment = Enum.TextYAlignment.Center 
+    BotaoCopyPos.Visible = isVisible
+    BotaoCopyPos.Parent = PositionsFrame
+
+    local CopyCorner = Instance.new("UICorner")
+    CopyCorner.CornerRadius = UDim.new(0, 10)
+    CopyCorner.Parent = BotaoCopyPos
+    local CopyStroke = Instance.new("UIStroke")
+    CopyStroke.Color = COR_BORDA
+    CopyStroke.Transparency = 0
+    CopyStroke.Thickness = 1
+    CopyStroke.Parent = BotaoCopyPos
+    
+    BotaoCopyPos.MouseEnter:Connect(function() BotaoCopyPos.BackgroundColor3 = COR_BOTAO_HOVER end)
+    BotaoCopyPos.MouseLeave:Connect(function() BotaoCopyPos.BackgroundColor3 = COR_BOTAO_PADRAO end)
+    BotaoCopyPos.MouseButton1Click:Connect(CopiarPosicao)
+
+    local BotaoSalvarSpawn = Instance.new("TextButton")
+    BotaoSalvarSpawn.Name = "BotaoSalvarSpawn"
+    BotaoSalvarSpawn.Size = UDim2.new(0.9, 0, 0.1, 0) 
+    BotaoSalvarSpawn.Position = UDim2.new(0.5, 0, 0.28, 0) 
+    BotaoSalvarSpawn.AnchorPoint = Vector2.new(0.5, 0)
+    BotaoSalvarSpawn.BackgroundColor3 = isSetSpawnActive and COR_BOTAO_ON or COR_BOTAO_OFF 
+    BotaoSalvarSpawn.Text = isSetSpawnActive and "Set Spawn [ON]" or "Set Spawn [OFF]"
+    BotaoSalvarSpawn.TextColor3 = COR_TEXTO_PADRAO
+    BotaoSalvarSpawn.Font = Enum.Font.Creepster 
+    BotaoSalvarSpawn.TextSize = 18
+    BotaoSalvarSpawn.TextYAlignment = Enum.TextYAlignment.Center 
+    BotaoSalvarSpawn.Visible = isVisible
+    BotaoSalvarSpawn.Parent = PositionsFrame
+
+    local SpawnCorner = Instance.new("UICorner")
+    SpawnCorner.CornerRadius = UDim.new(0, 10)
+    SpawnCorner.Parent = BotaoSalvarSpawn
+    local SpawnStroke = Instance.new("UIStroke")
+    SpawnStroke.Color = COR_BORDA
+    SpawnStroke.Transparency = 0
+    SpawnStroke.Thickness = 1
+    SpawnStroke.Parent = BotaoSalvarSpawn
+
+    BotaoSalvarSpawn.MouseEnter:Connect(function() 
+        BotaoSalvarSpawn.BackgroundColor3 = isSetSpawnActive and Color3.fromRGB(80, 180, 80) or Color3.fromRGB(220, 80, 80) 
+    end)
+    BotaoSalvarSpawn.MouseLeave:Connect(function() 
+        BotaoSalvarSpawn.BackgroundColor3 = isSetSpawnActive and COR_BOTAO_ON or COR_BOTAO_OFF
+    end)
+    BotaoSalvarSpawn.MouseButton1Click:Connect(function() AtivarSalvarSpawn(BotaoSalvarSpawn) end)
+
+
+    local BotaoTeleportTo = Instance.new("TextButton")
+    BotaoTeleportTo.Name = "BotaoTeleportTo"
+    BotaoTeleportTo.Size = UDim2.new(0.9, 0, 0.1, 0) 
+    BotaoTeleportTo.Position = UDim2.new(0.5, 0, 0.47, 0) 
+    BotaoTeleportTo.AnchorPoint = Vector2.new(0.5, 0)
+    BotaoTeleportTo.BackgroundColor3 = COR_BOTAO_PADRAO 
+    BotaoTeleportTo.Text = "TP to Position" 
+    BotaoTeleportTo.TextColor3 = COR_TEXTO_PADRAO
+    BotaoTeleportTo.Font = Enum.Font.Creepster 
+    BotaoTeleportTo.TextSize = 18
+    BotaoTeleportTo.TextYAlignment = Enum.TextYAlignment.Center 
+    BotaoTeleportTo.Visible = isVisible
+    BotaoTeleportTo.Parent = PositionsFrame
+
+    local TPPosCorner = Instance.new("UICorner")
+    TPPosCorner.CornerRadius = UDim.new(0, 10)
+    TPPosCorner.Parent = BotaoTeleportTo
+    local TPPosStroke = Instance.new("UIStroke")
+    TPPosStroke.Color = COR_BORDA
+    TPPosStroke.Transparency = 0
+    TPPosStroke.Thickness = 1
+    TPPosStroke.Parent = BotaoTeleportTo
+
+    BotaoTeleportTo.MouseEnter:Connect(function() BotaoTeleportTo.BackgroundColor3 = COR_BOTAO_HOVER end)
+    BotaoTeleportTo.MouseLeave:Connect(function() BotaoTeleportTo.BackgroundColor3 = COR_BOTAO_PADRAO end)
+    
+    local InputPos = Instance.new("TextBox")
+    InputPos.Name = "InputPos"
+    InputPos.Size = UDim2.new(0.9, 0, 0.1, 0) 
+    InputPos.Position = UDim2.new(0.5, 0, 0.60, 0) 
+    InputPos.AnchorPoint = Vector2.new(0.5, 0)
+    InputPos.BackgroundColor3 = COR_INPUT_FUNDO 
+    InputPos.Text = "X, Y, Z"
+    InputPos.TextColor3 = COR_TEXTO_PADRAO
+    InputPos.Font = Enum.Font.SourceSans
+    InputPos.TextSize = 16
+    InputPos.TextXAlignment = Enum.TextXAlignment.Center
+    InputPos.TextYAlignment = Enum.TextYAlignment.Center 
+    InputPos.Visible = isVisible
+    InputPos.Parent = PositionsFrame
+
+    local InputCorner = Instance.new("UICorner")
+    InputCorner.CornerRadius = UDim.new(0, 10)
+    InputCorner.Parent = InputPos
+
+    BotaoTeleportTo.MouseButton1Click:Connect(function() TeleportarParaPosicao(InputPos) end)
+    InputPos.FocusLost:Connect(function(enterPressed) 
+        if enterPressed then TeleportarParaPosicao(InputPos) end
+    end)
+    
+    showNotify("Janela Positions aberta!")
+    
+    updateSubFramePositions()
 end
 
--- Função para garantir que a GUI fique na frente após o respawn
-local function EnsureGUIPriority()
-    if ScreenGui and PlayerGui then
-        ScreenGui.Parent = nil
-        task.wait(0.05) 
-        ScreenGui.Parent = PlayerGui
+local function AlternarPositions(BotaoPositions)
+    if PositionsFrame then
+        PositionsFrame:Destroy()
+        PositionsFrame = nil
+        BotaoPositions.BackgroundColor3 = COR_BOTAO_PADRAO 
+        
+        updateSubFramePositions() 
+    else
+        CreatePositionsFrame()
+        BotaoPositions.BackgroundColor3 = COR_BOTAO_ON 
     end
 end
 
--- FUNÇÃO DE ANTI-AFK 
-local function StartAntiAFK()
-    while isAntiAFKActive do
-        task.wait(20) 
-        
-        local Character = LocalPlayer.Character
-        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-        
-        if Character and Humanoid and Humanoid.Health > 0 then
-            VirtualUser:SendInput({
-                {
-                    KeyCode = Enum.KeyCode.Space,
-                    UserInputType = Enum.UserInputType.Keyboard,
-                    State = Enum.UserInputState.Begin
-                },
-                {
-                    KeyCode = Enum.KeyCode.Space,
-                    UserInputType = Enum.UserInputType.Keyboard,
-                    State = Enum.UserInputState.End
-                }
-            })
+local BotaoPositions = Instance.new("TextButton")
+BotaoPositions.Name = "BotaoPositions"
+BotaoPositions.Size = UDim2.new(0.9, 0, 0.1, 0) 
+BotaoPositions.Position = UDim2.new(0.5, 0, 0.15, 0) 
+BotaoPositions.AnchorPoint = Vector2.new(0.5, 0)
+BotaoPositions.BackgroundColor3 = COR_BOTAO_PADRAO 
+BotaoPositions.Text = "Positions" 
+BotaoPositions.TextColor3 = COR_TEXTO_PADRAO
+BotaoPositions.Font = Enum.Font.Creepster 
+BotaoPositions.TextSize = 18
+BotaoPositions.TextYAlignment = Enum.TextYAlignment.Center 
+BotaoPositions.Parent = FramePrincipal
+
+local PosButtonCorner = Instance.new("UICorner")
+PosButtonCorner.CornerRadius = UDim.new(0, 10)
+PosButtonCorner.Parent = BotaoPositions
+local PosButtonStroke = Instance.new("UIStroke")
+PosButtonStroke.Color = COR_BORDA
+PosButtonStroke.Transparency = 0
+PosButtonStroke.Thickness = 1
+PosButtonStroke.Parent = BotaoPositions
+
+BotaoPositions.MouseEnter:Connect(function() 
+    if not PositionsFrame then 
+        BotaoPositions.BackgroundColor3 = COR_BOTAO_HOVER 
+    else
+        BotaoPositions.BackgroundColor3 = COR_BOTAO_ON
+    end
+end)
+BotaoPositions.MouseLeave:Connect(function() 
+    if not PositionsFrame then 
+        BotaoPositions.BackgroundColor3 = COR_BOTAO_PADRAO 
+    else
+        BotaoPositions.BackgroundColor3 = COR_BOTAO_ON
+    end
+end)
+
+local PositionsConexao = BotaoPositions.MouseButton1Click:Connect(function() AlternarPositions(BotaoPositions) end)
+table.insert(Connections, PositionsConexao) 
+
+local function TeleportToPlayer(targetPlayer)
+    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local HRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if HRP then
+            local targetPos = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 5, 0)
+            HRP.CFrame = targetPos
+            showNotify("TP para: " .. targetPlayer.Name)
+        else
+            showNotify("Seu personagem não está pronto!")
+        end
+    else
+        showNotify("Alvo não encontrado ou morto!")
+    end
+end
+
+local function CreatePlayerList(ScrollingFrame)
+    for _, child in pairs(ScrollingFrame:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("UIStroke") then 
+            child:Destroy()
         end
     end
-end
-
-
--- *** FUNÇÃO ARRASTÁVEL (APENAS PC/MOUSE) ***
--- Esta função agora move o 'frameToMove' (MainFrame) quando o clique é detectado no 'frameClickTarget' (TitleLabel).
-local function MakeDraggable(frameToMove, frameClickTarget)
-    local drag = false
-    local dragStart = nil
     
-    local function onInputBegan(input, gameProcessed)
-        -- Verifica se é o clique do mouse (Botão 1) E se o clique ocorreu no TitleLabel
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and not gameProcessed then
-            drag = true
-            dragStart = UserInputService:GetMouseLocation()
+    local players = Players:GetPlayers()
+    local yOffset = 0
+    local buttonHeight = 30 
+    local padding = 5
+    
+    for _, player in ipairs(players) do
+        if player ~= LocalPlayer then
+            local PlayerButton = Instance.new("TextButton")
+            PlayerButton.Name = "Player_" .. player.Name
+            PlayerButton.Size = UDim2.new(1, -padding*2, 0, buttonHeight) 
+            PlayerButton.Position = UDim2.new(0, padding, 0, yOffset + padding) 
+            PlayerButton.BackgroundColor3 = COR_FUNDO_SECUNDARIO 
+            PlayerButton.Text = player.Name
+            PlayerButton.TextColor3 = COR_TEXTO_PADRAO
+            PlayerButton.Font = Enum.Font.SourceSansSemibold 
+            PlayerButton.TextSize = 16
+            PlayerButton.TextXAlignment = Enum.TextXAlignment.Left 
+            PlayerButton.TextYAlignment = Enum.TextYAlignment.Center 
+            PlayerButton.Parent = ScrollingFrame
+
+            local PlayerButtonCorner = Instance.new("UICorner")
+            PlayerButtonCorner.CornerRadius = UDim.new(0, 8)
+            PlayerButtonCorner.Parent = PlayerButton
+            local PlayerButtonStroke = Instance.new("UIStroke")
+            PlayerButtonStroke.Color = COR_BORDA
+            PlayerButtonStroke.Transparency = 0.7 
+            PlayerButtonStroke.Thickness = 1
+            PlayerButtonStroke.Parent = PlayerButton
+
+            PlayerButton.MouseEnter:Connect(function() PlayerButton.BackgroundColor3 = COR_BOTAO_HOVER end)
+            PlayerButton.MouseLeave:Connect(function() PlayerButton.BackgroundColor3 = COR_FUNDO_SECUNDARIO end)
             
-            -- Captura o fim do clique
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    drag = false
-                end
+            PlayerButton.MouseButton1Click:Connect(function()
+                TeleportToPlayer(player)
             end)
-        end
-    end
-
-    local function onInputChanged(input)
-        -- Move o frame principal quando o arraste está ativo e o mouse se move
-        if drag and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local mousePos = UserInputService:GetMouseLocation()
-            local delta = mousePos - dragStart
             
-            -- Atualiza a posição do MainFrame
-            frameToMove.Position = UDim2.new(
-                0, frameToMove.Position.Offset.X + delta.X, 
-                0, frameToMove.Position.Offset.Y + delta.Y
-            )
-            
-            dragStart = mousePos
+            yOffset = yOffset + buttonHeight + padding 
         end
     end
     
-    -- Conecta os eventos de input ao TitleLabel
-    frameClickTarget.InputBegan:Connect(onInputBegan)
-    frameClickTarget.InputChanged:Connect(onInputChanged)
+    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset + padding) 
 end
 
--- APLICA: Arrastar o MainFrame, clicando no TitleLabel
-MakeDraggable(MainFrame, TitleLabel)
 
+local function CreateGoToFrame()
+    GoToFrame = Instance.new("Frame")
+    GoToFrame.Name = "GoToFrame"
+    local targetHeight = isMinimized and ALTURA_MINIMIZADA or ALTURA_MAXIMIZADA
+    GoToFrame.Size = UDim2.new(0, LARGURA_SUBFRAME, 0, targetHeight) 
+    GoToFrame.BackgroundColor3 = COR_FUNDO_PRINCIPAL 
+    GoToFrame.BorderSizePixel = 0 
+    GoToFrame.Active = true 
+    GoToFrame.Parent = InterfacePrincipal 
+    GoToFrame.ZIndex = 1
 
--- === 3. CONEXÕES DE EVENTOS E INICIALIZAÇÃO ===
-
--- Inicia o Anti-AFK em uma thread separada
-task.spawn(StartAntiAFK) 
-
-SetSpawnButton.MouseButton1Click:Connect(SaveCurrentPosition)
-ToggleButton.MouseButton1Click:Connect(ToggleTeleport) 
-CloseButton.MouseButton1Click:Connect(CloseAndDestroyScript)
-
--- Lógica de HOVER para o botão Set Spawn
-SetSpawnButton.MouseEnter:Connect(function()
-    if SetSpawnButton.Text ~= SavedButtonText then
-        SetSpawnButton.BackgroundColor3 = HOVER_COLOR
-    end
-end)
-
-SetSpawnButton.MouseLeave:Connect(function()
-    if SetSpawnButton.Text ~= SavedButtonText then
-        SetSpawnButton.BackgroundColor3 = DefaultButtonColor
-    end
-end)
-
-
-LocalPlayer.CharacterAdded:Connect(function(Character)
-    TeleportToSavedPosition(Character)
-    EnsureGUIPriority()
+    GoToFrame.Position = FramePrincipal.Position
     
-    -- Atualiza o estado visual do Toggle após o respawn
-    if isTeleportActive then
-        ToggleButton.Text = TeleportOnText
-        ToggleButton.BackgroundColor3 = TeleportOnColor
-        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
-    else
-        ToggleButton.Text = TeleportOffText
-        ToggleButton.BackgroundColor3 = TeleportOffColor
-        ToggleButton.TextColor3 = TEXT_COLOR_LIGHT
-    end
+    local GoToCorner = Instance.new("UICorner")
+    GoToCorner.CornerRadius = UDim.new(0, 15)
+    GoToCorner.Parent = GoToFrame
+    local GoToStroke = Instance.new("UIStroke")
+    GoToStroke.Color = COR_BORDA
+    GoToStroke.Transparency = 0
+    GoToStroke.Thickness = 2
+    GoToStroke.Parent = GoToFrame
     
-    -- Garante que o Set Spawn volte para a cor original (não salva) se for o caso
-    if SavedCFrame == nil then
-        SetSpawnButton.Text = DefaultButtonText
-        SetSpawnButton.BackgroundColor3 = DefaultButtonColor
-        SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
-    else
-        -- Se o ponto está salvo, o botão deve manter a cor de feedback (verde)
-        SetSpawnButton.Text = SavedButtonText
-        SetSpawnButton.BackgroundColor3 = SavedButtonColor
-        SetSpawnButton.TextColor3 = TEXT_COLOR_LIGHT
+    local LabelTituloGoTo = Instance.new("TextLabel")
+    LabelTituloGoTo.Name = "LabelTituloGoTo"
+    LabelTituloGoTo.Size = UDim2.new(1, 0, 0, ALTURA_MINIMIZADA) 
+    LabelTituloGoTo.Position = UDim2.new(0, 0, 0, 0)
+    LabelTituloGoTo.BackgroundColor3 = COR_TITULO_FUNDO 
+    LabelTituloGoTo.Text = "PLAYER TARGETS" 
+    LabelTituloGoTo.TextColor3 = COR_TEXTO_PADRAO
+    LabelTituloGoTo.Font = Enum.Font.Creepster 
+    LabelTituloGoTo.TextSize = 22
+    LabelTituloGoTo.TextYAlignment = Enum.TextYAlignment.Center 
+    LabelTituloGoTo.Parent = GoToFrame
+
+    local GoToTitleCorner = Instance.new("UICorner")
+    GoToTitleCorner.CornerRadius = UDim.new(0, 15)
+    GoToTitleCorner.Parent = LabelTituloGoTo
+    
+    local PlayerScrollingFrame = Instance.new("ScrollingFrame")
+    PlayerScrollingFrame.Name = "PlayerList"
+    local listHeight = ALTURA_MAXIMIZADA - ALTURA_MINIMIZADA - 5 
+    PlayerScrollingFrame.Size = UDim2.new(1, 0, 0, listHeight) 
+    PlayerScrollingFrame.Position = UDim2.new(0, 0, 0, ALTURA_MINIMIZADA) 
+    PlayerScrollingFrame.BackgroundColor3 = COR_FUNDO_PRINCIPAL
+    PlayerScrollingFrame.ScrollBarThickness = 8 
+    PlayerScrollingFrame.BackgroundTransparency = 0.8 
+    
+    PlayerScrollingFrame.Visible = not isMinimized 
+    PlayerScrollingFrame.Parent = GoToFrame
+
+    local ScrollCorner = Instance.new("UICorner")
+    ScrollCorner.CornerRadius = UDim.new(0, 10)
+    ScrollCorner.Parent = PlayerScrollingFrame
+    
+    CreatePlayerList(PlayerScrollingFrame)
+    
+    showNotify("Janela TP to Players aberta!")
+    
+    updateSubFramePositions()
+end
+
+local function AlternarGoTo(BotaoGoTo)
+    if GoToFrame then
+        GoToFrame:Destroy()
+        GoToFrame = nil
+        BotaoGoTo.BackgroundColor3 = COR_BOTAO_PADRAO 
         
-        task.delay(FeedbackDuration, function()
-            if SetSpawnButton.Text == SavedButtonText then
-                SetSpawnButton.Text = DefaultButtonText
-                SetSpawnButton.BackgroundColor3 = DefaultButtonColor
-                SetSpawnButton.TextColor3 = TEXT_COLOR_DARK
-            end
-        end)
+        updateSubFramePositions()
+    else
+        CreateGoToFrame()
+        BotaoGoTo.BackgroundColor3 = COR_BOTAO_ON 
+    end
+end
+
+local BotaoGoTo = Instance.new("TextButton")
+BotaoGoTo.Name = "BotaoGoTo"
+BotaoGoTo.Size = UDim2.new(0.9, 0, 0.1, 0) 
+BotaoGoTo.Position = UDim2.new(0.5, 0, 0.28, 0) 
+BotaoGoTo.AnchorPoint = Vector2.new(0.5, 0)
+BotaoGoTo.BackgroundColor3 = COR_BOTAO_PADRAO 
+BotaoGoTo.Text = "TP to Players" 
+BotaoGoTo.TextColor3 = COR_TEXTO_PADRAO
+BotaoGoTo.Font = Enum.Font.Creepster 
+BotaoGoTo.TextSize = 18
+BotaoGoTo.TextYAlignment = Enum.TextYAlignment.Center 
+BotaoGoTo.Parent = FramePrincipal
+
+local GoToButtonCorner = Instance.new("UICorner")
+GoToButtonCorner.CornerRadius = UDim.new(0, 10)
+GoToButtonCorner.Parent = BotaoGoTo
+local GoToButtonStroke = Instance.new("UIStroke")
+GoToButtonStroke.Color = COR_BORDA
+GoToButtonStroke.Transparency = 0
+GoToButtonStroke.Thickness = 1
+GoToButtonStroke.Parent = BotaoGoTo
+
+BotaoGoTo.MouseEnter:Connect(function() 
+    if not GoToFrame then 
+        BotaoGoTo.BackgroundColor3 = COR_BOTAO_HOVER 
+    else
+        BotaoGoTo.BackgroundColor3 = COR_BOTAO_ON
     end
 end)
+BotaoGoTo.MouseLeave:Connect(function() 
+    if not GoToFrame then 
+        BotaoGoTo.BackgroundColor3 = COR_BOTAO_PADRAO 
+    else
+        BotaoGoTo.BackgroundColor3 = COR_BOTAO_ON
+    end
+end)
+
+local GoToConexao = BotaoGoTo.MouseButton1Click:Connect(function() AlternarGoTo(BotaoGoTo) end)
+table.insert(Connections, GoToConexao) 
+
+local function onDragStart(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        
+        if input.Target == LabelTitulo or input.Target == BotaoMinimizar or input.Target == BotaoFechar then
+            isDragging = true
+            
+            local mousePos = UserInputService:GetMouseLocation()
+            local framePos = FramePrincipal.AbsolutePosition
+            
+            dragStartOffset = mousePos - framePos
+            
+            if not dragConnection then
+                dragConnection = UserInputService.InputChanged:Connect(function(inputObject)
+                    if isDragging and (inputObject.UserInputType == Enum.UserInputType.MouseMovement or inputObject.UserInputType == Enum.UserInputType.Touch) then
+                        
+                        local newMousePos = UserInputService:GetMouseLocation()
+                        local newAbsolutePos = newMousePos - dragStartOffset
+                        
+                        local newX = newAbsolutePos.X
+                        local newY = newAbsolutePos.Y
+
+                        FramePrincipal.Position = UDim2.new(0, newX, 0, newY) -- Posicionamento absoluto (0, newY)
+                        
+                        local ShadowFrame = PlayerGui.InterfacePrincipal:FindFirstChild("ShadowFrame")
+                        if ShadowFrame then
+                             ShadowFrame.Position = UDim2.new(0, newX - 2, 0, newY + 2) -- Shadow deve seguir a nova posição
+                        end
+                        
+                        updateSubFramePositions(newX, newY)
+                    end
+                end)
+                table.insert(Connections, dragConnection) 
+            end
+        end
+    end
+end
+
+local function onDragEnd(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
+    end
+end
+
+local DragStartConnection1 = LabelTitulo.InputBegan:Connect(onDragStart)
+local DragStartConnection2 = BotaoMinimizar.InputBegan:Connect(onDragStart)
+local DragStartConnection3 = BotaoFechar.InputBegan:Connect(onDragStart)
+local DragEndConnection = UserInputService.InputEnded:Connect(onDragEnd)
+table.insert(Connections, DragStartConnection1)
+table.insert(Connections, DragStartConnection2)
+table.insert(Connections, DragStartConnection3)
+table.insert(Connections, DragEndConnection)
