@@ -1,0 +1,162 @@
+task.spawn(function()
+    wait(10)
+getgenv().Config = {
+        Dashboard = {
+            Enabled = false,
+            GroupName = "",
+        },
+        EventFarm = {
+            AutoHauntlet = false,
+            AutoFashion = false,
+            AutoSleepOrTreat = false,
+            AutoTameCatBat = true, 
+            AutoClaimTreatBag = true, 
+        },
+        BabyFarm = false,
+        PetFarm = {
+            Enabled = false,
+            FarmEggs = false,
+            BuyEggs = false,
+            EggType = "any",
+            BuyEggType = "any",
+            MaxPets = 1,
+            FarmUntilFullGrown = false,
+            PrioritizeFriendship = false,
+            SelectiveFarm = false,
+            SelectedPetTypes = {},
+        },
+        Misc = {
+            AutoNeon = true,
+            AutoShowUI = false,
+        },
+        Performance = {
+            Disable3DRendering = true,
+            ReduceGraphics = true,
+        },
+        AutoPotion = {
+            Enabled = false,
+            SelectedPets = {},
+        },
+        AutoTrade = {
+            Enabled = false,
+            AutoAcceptTrades = false,
+            SendTradesTo = "",
+            TradeMode = "all",
+            Categories = {},
+            Items = {},
+        },
+        AutoBuy = {
+            Enabled = true,
+            SelectedItems = {"halloween_2025_spider_box"},
+        },
+        AutoPay = {
+            Enabled = false,
+            TargetPlayer = "",
+        },
+        AutoOpen = {
+            Enabled = true,
+            Items = {"halloween_2025_spider_box"},
+        },
+        AutoRecycle = {
+            Enabled = false,
+            RarityFilter = {
+                common = true,
+                uncommon = true,
+                rare = false,
+                ultra_rare = false,
+                legendary = false
+            },
+            KeepNeons = true,
+            KeepFullGrown = false
+        },
+        IdleProgression = {
+            Enabled = true,
+            SelectedPets = {"halloween_2025_spider", "halloween_2025_spider2", "halloween_2025_spider3", "halloween_2025_spider4"}
+        },
+        Webhook = {
+            Enabled = false,
+            URL = "https://discord.com/api/webhooks/",
+        },
+        TaskExclusion = {
+            Enabled = false,
+            ExcludedTasks = {},
+        },
+     }
+script_key="BPkJPQXdyhChAZBfxDLPfbrdgqvhgpYK"
+loadstring(game:HttpGet("https://zekehub.com/scripts/AdoptMe/MassFarm.lua"))()
+end)
+
+task.spawn(function()
+    wait(10)
+local START_X = -568.89
+local START_Y = 6529.58
+local START_Z = -13855
+
+local NEW_TARGET_X = -228.53
+local NEW_TARGET_Y = 31.23
+local NEW_TARGET_Z = -1496.77
+
+local FINAL_TARGET_X = -220.09
+local FINAL_TARGET_Y = 31.35
+local FINAL_TARGET_Z = -1486.36
+
+local TeleportPosition1 = Vector3.new(START_X, START_Y + 3, START_Z)
+local TeleportPosition2 = Vector3.new(NEW_TARGET_X, NEW_TARGET_Y, NEW_TARGET_Z)
+local TeleportPosition3 = Vector3.new(FINAL_TARGET_X, FINAL_TARGET_Y, FINAL_TARGET_Z)
+
+local MOVEMENT_DURATION = 1.5
+local SPEED_PER_FRAME = 0.5
+local WAIT_TIME_1 = 10
+local WAIT_TIME_2 = 2
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Player = Players.LocalPlayer
+
+local function FullMovementSequence()
+    local Character = Player.Character or Player.CharacterAdded:Wait()
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+
+    if not HumanoidRootPart then
+        return
+    end
+
+    HumanoidRootPart.CFrame = CFrame.new(TeleportPosition1)
+    task.wait(0.1) 
+
+    local startTime = tick()
+
+    local connection = RunService.Heartbeat:Connect(function(deltaTime)
+        
+        if (tick() - startTime) >= MOVEMENT_DURATION then
+            connection:Disconnect()
+            return
+        end
+        
+        local backwardVector = HumanoidRootPart.CFrame.LookVector * -1
+        
+        backwardVector = Vector3.new(backwardVector.X, 0, backwardVector.Z).Unit
+        
+        local displacement = backwardVector * SPEED_PER_FRAME
+        HumanoidRootPart.CFrame = HumanoidRootPart.CFrame + displacement
+    end)
+    
+    task.wait(MOVEMENT_DURATION + 0.5) 
+
+    task.wait(WAIT_TIME_1)
+    
+    HumanoidRootPart.CFrame = CFrame.new(TeleportPosition2)
+
+    task.wait(WAIT_TIME_2)
+
+    HumanoidRootPart.CFrame = CFrame.new(TeleportPosition3)
+end
+
+FullMovementSequence()
+end)
+task.spawn(function()
+    wait(10)
+script_key="BPkJPQXdyhChAZBfxDLPfbrdgqvhgpYK"
+loadstring(game:HttpGet("https://zekehub.com/scripts/AdoptMe/EventFarm.lua"))()
+end)
